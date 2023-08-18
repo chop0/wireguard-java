@@ -1,5 +1,6 @@
 package ax.xz.wireguard.crypto;
 
+import ax.xz.wireguard.crypto.keys.NoisePublicKey;
 import org.bouncycastle.crypto.digests.Blake2sDigest;
 
 import java.nio.ByteBuffer;

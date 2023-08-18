@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.concurrent.Executors;
 
 public class TunnelDeviceBond {
 	private static final Logger logger = LoggerFactory.getLogger(TunnelDeviceBond.class);
@@ -26,7 +27,7 @@ public class TunnelDeviceBond {
 
 		try (var sts = new WorkerThreadScope()) {
 			sts.fork(() -> {
-				device.main();
+				device.run();
 				return null;
 			});
 			sts.fork(() -> {
@@ -59,12 +60,11 @@ public class TunnelDeviceBond {
 				return null;
 			});
 
-			while (!Thread.interrupted() && !sts.isShutdown()) {
-				logger.debug(device.getStats().toString());
-				Thread.sleep(1000);
-			}
+			try (var sch = Executors.newScheduledThreadPool(0, Thread.ofVirtual().factory())) {
+				sch.schedule(() -> logger.debug(device.getStats().toString()), 1, java.util.concurrent.TimeUnit.SECONDS);
 
-			sts.join();
+				sts.join();
+			}
 		}
 	}
 }

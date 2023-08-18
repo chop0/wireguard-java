@@ -31,8 +31,4 @@ public class OSXRawSocketProvider implements RawSocketProvider {
 		if (!isAvailable())
 			throw new IllegalStateException("OS %s not supported".formatted(System.getProperty("os.name")));
 	}
-
-	public static void main(String[] args) throws IOException {
-		RawSocketProvider.getProvider().open();
-	}
 }

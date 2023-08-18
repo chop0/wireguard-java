@@ -1,8 +1,8 @@
 package ax.xz.wireguard;
 
-import ax.xz.wireguard.crypto.NoisePresharedKey;
-import ax.xz.wireguard.crypto.NoisePrivateKey;
-import ax.xz.wireguard.crypto.NoisePublicKey;
+import ax.xz.wireguard.crypto.keys.NoisePresharedKey;
+import ax.xz.wireguard.crypto.keys.NoisePrivateKey;
+import ax.xz.wireguard.crypto.keys.NoisePublicKey;
 import ax.xz.wireguard.message.Message;
 import ax.xz.wireguard.message.MessageInitiation;
 import ax.xz.wireguard.message.MessageResponse;
@@ -204,11 +204,11 @@ public final class WireguardDevice implements Closeable, WireguardDeviceMBean {
 		}
 	}
 
-	public void main() {
-		ScopedValue.runWhere(CURRENT_DEVICE, this, this::main0);
+	public void run() {
+		ScopedValue.runWhere(CURRENT_DEVICE, this, this::run0);
 	}
 
-	private void main0() {
+	private void run0() {
 		try (var peerExecutor = new WorkerThreadScope()) {
 			peerTasks.add(() -> {
 				while (!Thread.interrupted()) {

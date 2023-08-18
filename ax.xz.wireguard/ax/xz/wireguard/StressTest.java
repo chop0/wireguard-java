@@ -1,6 +1,6 @@
 package ax.xz.wireguard;
 
-import ax.xz.wireguard.crypto.NoisePrivateKey;
+import ax.xz.wireguard.crypto.keys.NoisePrivateKey;
 import ax.xz.wireguard.packet.ICMPv6;
 import ax.xz.wireguard.packet.IPv6;
 
@@ -23,8 +23,8 @@ class StressTest {
 			b.addPeer(keypairA.publicKey(), Duration.ofSeconds(25), new InetSocketAddress(InetAddress.getByName("::1"), 51281));
 
 			try (var executor = Executors.newThreadPerTaskExecutor(Thread.ofVirtual().uncaughtExceptionHandler((t, e) -> e.printStackTrace()).factory())) {
-				executor.submit(a::main);
-				executor.submit(b::main);
+				executor.submit(a::run);
+				executor.submit(b::run);
 
 				var icmp = IPv6.of(
 						(Inet6Address) InetAddress.getByName("4444::"),
@@ -53,10 +53,8 @@ class StressTest {
 						while (!Thread.interrupted()) {
 							try {
 								a.receiveTransport();
-							} catch (TimeoutException e) {
+							} catch (IllegalStateException | TimeoutException e) {
 								e.printStackTrace();
-							} catch (IllegalStateException e) {
-
 							}
 						}
 					} catch (Throwable e) {

@@ -1,8 +1,6 @@
 package ax.xz.wireguard;
 
-import ax.xz.wireguard.crypto.NoisePublicKey;
-
-import java.net.SocketAddress;
+import ax.xz.wireguard.crypto.keys.NoisePublicKey;
 
 public interface PeerMBean {
 	int getInboundQueueSize();

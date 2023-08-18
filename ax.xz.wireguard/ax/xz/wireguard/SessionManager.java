@@ -121,6 +121,7 @@ class SessionManager implements Runnable {
 				}
 
 				var timeTillExpiration = session == null ? Duration.ofDays(365) : Duration.between(Instant.now(), session.expiration());
+				//noinspection ResultOfMethodCallIgnored
 				sessionChangedCondition.await(timeTillExpiration.toMillis(), TimeUnit.MILLISECONDS);
 			}
 		} catch (InterruptedException e) {

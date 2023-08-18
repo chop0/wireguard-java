@@ -3,7 +3,7 @@ package ax.xz.wireguard.message;
 import ax.xz.wireguard.PooledPacket;
 import ax.xz.wireguard.crypto.CookieGenerator;
 import ax.xz.wireguard.crypto.Crypto;
-import ax.xz.wireguard.crypto.NoisePublicKey;
+import ax.xz.wireguard.crypto.keys.NoisePublicKey;
 import ax.xz.wireguard.crypto.chacha20poly1305;
 
 import java.nio.ByteBuffer;

@@ -11,5 +11,6 @@
     <orderEntry type="library" name="slf4j-api-2.0.7" level="project" />
     <orderEntry type="library" scope="RUNTIME" name="logback-1.4.9" level="project" />
     <orderEntry type="module" module-name="ax.xz.raw" />
+    <orderEntry type="module" module-name="ax.xz.raw.osx" scope="RUNTIME" />
   </component>
 </module>

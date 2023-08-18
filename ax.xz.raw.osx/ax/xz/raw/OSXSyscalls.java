@@ -195,8 +195,8 @@ class OSXSyscalls {
 	static int getControlID(String name) throws IOException {
 		int fd = socket(PF_SYSTEM, SOCK_DGRAM, SYSPROTO_CONTROL);
 
-		try {
-			var ctl_info_ = ctl_info.allocate();
+		try (var arena = Arena.ofConfined()) {
+			var ctl_info_ = ctl_info.allocate(arena);
 			ctl_info_.setCtlName(name);
 
 			ioctl(fd, CTLIOCGINFO, ctl_info_.getSeg());

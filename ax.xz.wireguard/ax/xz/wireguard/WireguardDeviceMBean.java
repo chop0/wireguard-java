@@ -1,11 +1,6 @@
 package ax.xz.wireguard;
 
-import ax.xz.wireguard.crypto.NoisePresharedKey;
-import ax.xz.wireguard.crypto.NoisePrivateKey;
-import ax.xz.wireguard.crypto.NoisePublicKey;
-
-import java.net.SocketAddress;
-import java.time.Duration;
+import ax.xz.wireguard.crypto.keys.NoisePrivateKey;
 
 public interface WireguardDeviceMBean {
 	void deletePeer(Peer peer);

@@ -1,7 +1,7 @@
 package ax.xz.wireguard;
 
-import ax.xz.wireguard.crypto.NoisePresharedKey;
-import ax.xz.wireguard.crypto.NoisePublicKey;
+import ax.xz.wireguard.crypto.keys.NoisePresharedKey;
+import ax.xz.wireguard.crypto.keys.NoisePublicKey;
 import ax.xz.wireguard.message.Message;
 import ax.xz.wireguard.message.MessageInitiation;
 import ax.xz.wireguard.message.MessageResponse;

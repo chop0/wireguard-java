@@ -1,9 +1,9 @@
 package ax.xz.wireguard.cli;
 
 import ax.xz.wireguard.IPUtils;
-import ax.xz.wireguard.crypto.NoisePresharedKey;
-import ax.xz.wireguard.crypto.NoisePrivateKey;
-import ax.xz.wireguard.crypto.NoisePublicKey;
+import ax.xz.wireguard.crypto.keys.NoisePresharedKey;
+import ax.xz.wireguard.crypto.keys.NoisePrivateKey;
+import ax.xz.wireguard.crypto.keys.NoisePublicKey;
 
 import java.net.*;
 import java.time.Duration;

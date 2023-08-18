@@ -1,8 +1,8 @@
 package ax.xz.wireguard;
 
-import ax.xz.wireguard.crypto.NoisePresharedKey;
-import ax.xz.wireguard.crypto.NoisePrivateKey;
-import ax.xz.wireguard.crypto.NoisePublicKey;
+import ax.xz.wireguard.crypto.keys.NoisePresharedKey;
+import ax.xz.wireguard.crypto.keys.NoisePrivateKey;
+import ax.xz.wireguard.crypto.keys.NoisePublicKey;
 import ax.xz.wireguard.crypto.chacha20poly1305;
 import org.slf4j.Logger;
 

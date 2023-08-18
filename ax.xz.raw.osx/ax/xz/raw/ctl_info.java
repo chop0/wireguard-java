@@ -24,8 +24,8 @@ class ctl_info {
 		this.seg = seg;
 	}
 
-	static ctl_info allocate() {
-		return new ctl_info(Arena.ofAuto().allocate(ctlInfo));
+	static ctl_info allocate(Arena arena) {
+		return new ctl_info(arena.allocate(ctlInfo));
 	}
 
 	int ctlId() {

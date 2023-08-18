@@ -13,6 +13,22 @@ jobs:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 0
+
+      # Setup the desired JDK using setup-java action
+      - name: 'Set up latest JDK N from jdk.java.net'
+        uses: oracle-actions/setup-java@v1.3.1
+        with:
+          website: jdk.java.net
+          release: EA
+
+      # Symlink the JDK home directory to /root/.jdks
+      - name: Symlink JDK for Qodana
+        run: |
+          sudo mkdir -p /root/.jdks
+          echo "JAVA_HOME=$JAVA_HOME"
+          sudo ln -s $JAVA_HOME /root/.jdks/jdk
+
+      # Now, run the Qodana scan
       - name: 'Qodana Scan'
         uses: JetBrains/qodana-action@v2023.2
         env:

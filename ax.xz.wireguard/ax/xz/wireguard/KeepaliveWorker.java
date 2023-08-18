@@ -45,6 +45,7 @@ class KeepaliveWorker implements Runnable {
 					}
 				}
 
+				//noinspection ResultOfMethodCallIgnored
 				keepaliveCondition.await(keepaliveInterval.toMillis(), TimeUnit.MILLISECONDS);
 			}
 		} catch (InterruptedException e) {

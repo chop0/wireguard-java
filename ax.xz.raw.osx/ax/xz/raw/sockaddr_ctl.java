@@ -60,8 +60,8 @@ class sockaddr_ctl {
 		this.seg = seg;
 	}
 
-	static sockaddr_ctl allocate() {
-		return new sockaddr_ctl(Arena.ofAuto().allocate(sockaddrCtl));
+	static sockaddr_ctl allocate(Arena arena) {
+		return new sockaddr_ctl(arena.allocate(sockaddrCtl));
 	}
 
 	int scLen() {

@@ -1,4 +1,4 @@
-package ax.xz.wireguard.crypto;
+package ax.xz.wireguard.crypto.keys;
 
 import java.io.Serializable;
 import java.util.Arrays;

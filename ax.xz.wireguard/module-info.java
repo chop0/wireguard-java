@@ -8,5 +8,5 @@ module ax.xz.wireguard {
 
 	exports ax.xz.wireguard;
 	exports ax.xz.wireguard.cli;
-	exports ax.xz.wireguard.message;
+	exports ax.xz.wireguard.crypto.keys;
 }
