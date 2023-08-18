@@ -1,0 +1,11 @@
+**/*.dSYM
+**/*.dylib
+**/.DS_STORE
+../ax.xz.census.proxy/out
+build
+.idea
+.gradle
+dist
+*.app
+*.jar
+**/*.o

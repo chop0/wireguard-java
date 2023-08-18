@@ -1,0 +1,17 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="WireguardTunnelCLI" type="Application" factoryName="Application" nameIsGenerated="true">
+    <option name="MAIN_CLASS_NAME" value="ax.xz.wireguard.cli.WireguardTunnelCLI" />
+    <module name="ax.xz.wireguard" />
+    <option name="PROGRAM_PARAMETERS" value="ginkoid.conf" />
+    <option name="VM_PARAMETERS" value="--enable-preview" />
+    <extension name="coverage">
+      <pattern>
+        <option name="PATTERN" value="ax.xz.wireguard.cli.*" />
+        <option name="ENABLED" value="true" />
+      </pattern>
+    </extension>
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>
