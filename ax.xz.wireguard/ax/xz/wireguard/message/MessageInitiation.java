@@ -1,5 +1,6 @@
-package ax.xz.wireguard;
+package ax.xz.wireguard.message;
 
+import ax.xz.wireguard.PooledPacket;
 import ax.xz.wireguard.crypto.CookieGenerator;
 import ax.xz.wireguard.crypto.Crypto;
 import ax.xz.wireguard.crypto.NoisePublicKey;
@@ -10,7 +11,7 @@ import java.nio.ByteOrder;
 import java.util.Arrays;
 import java.util.Objects;
 
-final class MessageInitiation extends PooledPacket implements Message {
+public final class MessageInitiation extends PooledPacket implements Message {
 	public static final int TYPE = 1;
 	public static final int LENGTH = 4 + 4 + NoisePublicKey.LENGTH + chacha20poly1305.Overhead + NoisePublicKey.LENGTH + chacha20poly1305.Overhead + Crypto.TIMESTAMP_LENGTH + chacha20poly1305.Overhead * 2;
 

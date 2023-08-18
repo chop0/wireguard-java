@@ -1,9 +1,9 @@
-package ax.xz.wireguard;
+package ax.xz.wireguard.message;
 
 import ax.xz.wireguard.crypto.Crypto;
 
-record MessageCookieReply(int type, int receiver, byte[] nonce, byte[] cookie) implements Message {
-	MessageCookieReply {
+public record MessageCookieReply(int type, int receiver, byte[] nonce, byte[] cookie) implements Message {
+	public MessageCookieReply {
 		if (type != 3)
 			throw new IllegalArgumentException("type must be 3");
 

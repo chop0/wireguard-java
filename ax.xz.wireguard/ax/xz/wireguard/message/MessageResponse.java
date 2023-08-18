@@ -1,5 +1,6 @@
-package ax.xz.wireguard;
+package ax.xz.wireguard.message;
 
+import ax.xz.wireguard.PooledPacket;
 import ax.xz.wireguard.crypto.CookieGenerator;
 import ax.xz.wireguard.crypto.NoisePublicKey;
 import ax.xz.wireguard.crypto.chacha20poly1305;

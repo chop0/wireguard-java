@@ -1,14 +1,16 @@
 package ax.xz.wireguard;
 
+import ax.xz.wireguard.message.MessageInitiation;
+import ax.xz.wireguard.message.MessageResponse;
 import org.slf4j.Logger;
 
 import javax.crypto.BadPaddingException;
 import java.io.IOException;
-import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Map;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -21,9 +23,9 @@ class SessionManager implements Runnable {
 	private final ReentrantLock sessionLock = new ReentrantLock();
 	private final Condition sessionChangedCondition = sessionLock.newCondition();
 
-	private final LinkedBlockingQueue<InboundMessage<MessageResponse>> inboundHandshakeResponseQueue = new LinkedBlockingQueue<>();
+	private final LinkedBlockingQueue<Map.Entry<MessageResponse, SocketAddress>> inboundHandshakeResponseQueue = new LinkedBlockingQueue<>();
 	// A queue of inbound handshake initiation messages
-	private final LinkedBlockingQueue<InboundMessage<MessageInitiation>> inboundHandshakeInitiationQueue = new LinkedBlockingQueue<>();
+	private final LinkedBlockingQueue<Map.Entry<MessageInitiation, SocketAddress>> inboundHandshakeInitiationQueue = new LinkedBlockingQueue<>();
 
 	private final Peer peer;
 	private final WireguardDevice device;
@@ -40,7 +42,7 @@ class SessionManager implements Runnable {
 	}
 
 	void receiveHandshakeResponse(SocketAddress address, MessageResponse message) {
-		inboundHandshakeResponseQueue.add(new InboundMessage<>(address, message));
+		inboundHandshakeResponseQueue.add(Map.entry(message, address));
 	}
 
 	private void transmit(ByteBuffer data, SocketAddress remoteAddress) throws IOException {
@@ -134,21 +136,25 @@ class SessionManager implements Runnable {
 	}
 
 	private static final AtomicInteger nextSessionIndex = new AtomicInteger(1);
+
 	private void handshakeResponderThread() {
 		try {
 			while (!Thread.interrupted()) {
 				var initiation = inboundHandshakeInitiationQueue.take();
-				logger.info("Received handshake initiation from {}", initiation.address());
+				logger.info("Received handshake initiation from {}", initiation.getValue());
 
 				sessionLock.lock();
 				try {
-					var handshake = Handshakes.responderHandshake(device.getStaticIdentity(), initiation.message().ephemeral(), initiation.message().encryptedStatic(), initiation.message().encryptedTimestamp());
+					var message = initiation.getKey();
+					var address = initiation.getValue();
+
+					var handshake = Handshakes.responderHandshake(device.getStaticIdentity(), message.ephemeral(), message.encryptedStatic(), message.encryptedTimestamp());
 
 					int localIndex = nextSessionIndex.getAndIncrement();
-					var packet = MessageResponse.create(localIndex, initiation.message().sender(), handshake.getLocalEphemeral(), handshake.getEncryptedEmpty(), handshake.getRemotePublicKey());
-					transmit(packet.buffer(), initiation.address());
+					var packet = MessageResponse.create(localIndex, initiation.getKey().sender(), handshake.getLocalEphemeral(), handshake.getEncryptedEmpty(), handshake.getRemotePublicKey());
+					transmit(packet.buffer(), address);
 
-					setSession(new EstablishedSession(device, handshake.getKeypair(), initiation.address(), localIndex, initiation.message().sender()));
+					setSession(new EstablishedSession(device, handshake.getKeypair(), address, localIndex, message.sender()));
 					logger.info("Completed handshake with {} (responder)", peer.getAuthority());
 				} catch (BadPaddingException e) {
 					continue;
@@ -202,13 +208,15 @@ class SessionManager implements Runnable {
 				continue;
 			}
 
-			var kp = handshake.consumeMessageResponse(response.message().ephemeral(), response.message().encryptedEmpty());
-			return new EstablishedSession(device, kp, endpoint, localIndex, response.message().sender());
+			var message = response.getKey();
+
+			var kp = handshake.consumeMessageResponse(message.ephemeral(), message.encryptedEmpty());
+			return new EstablishedSession(device, kp, endpoint, localIndex, message.sender());
 		}
 	}
 
 	public void receiveInitiation(SocketAddress address, MessageInitiation messageInitiationInboundMessage) {
-		inboundHandshakeInitiationQueue.add(new InboundMessage<>(address, messageInitiationInboundMessage));
+		inboundHandshakeInitiationQueue.add(Map.entry(messageInitiationInboundMessage, address));
 	}
 
 	/**

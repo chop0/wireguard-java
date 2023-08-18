@@ -1,4 +1,4 @@
-package ax.xz.wireguard;
+package ax.xz.wireguard.message;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;

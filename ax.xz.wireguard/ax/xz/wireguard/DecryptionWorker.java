@@ -1,8 +1,8 @@
 package ax.xz.wireguard;
 
+import ax.xz.wireguard.message.MessageTransport;
 import org.slf4j.Logger;
 
-import javax.crypto.BadPaddingException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.concurrent.LinkedBlockingQueue;

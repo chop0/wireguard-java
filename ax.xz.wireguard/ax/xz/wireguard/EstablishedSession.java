@@ -1,14 +1,12 @@
 package ax.xz.wireguard;
 
-import ax.xz.wireguard.crypto.chacha20poly1305;
+import ax.xz.wireguard.message.Message;
+import ax.xz.wireguard.message.MessageTransport;
 
 import javax.crypto.BadPaddingException;
-import javax.crypto.IllegalBlockSizeException;
-import javax.crypto.ShortBufferException;
 import java.io.IOException;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.concurrent.locks.ReentrantLock;

@@ -3,6 +3,10 @@ package ax.xz.wireguard;
 import ax.xz.wireguard.crypto.NoisePresharedKey;
 import ax.xz.wireguard.crypto.NoisePrivateKey;
 import ax.xz.wireguard.crypto.NoisePublicKey;
+import ax.xz.wireguard.message.Message;
+import ax.xz.wireguard.message.MessageInitiation;
+import ax.xz.wireguard.message.MessageResponse;
+import ax.xz.wireguard.message.MessageTransport;
 import org.slf4j.Logger;
 
 import javax.crypto.BadPaddingException;
