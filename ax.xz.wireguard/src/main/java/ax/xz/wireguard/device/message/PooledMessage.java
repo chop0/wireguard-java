@@ -1,4 +1,4 @@
-package ax.xz.wireguard.message;
+package ax.xz.wireguard.device.message;
 
 import java.nio.ByteBuffer;
 

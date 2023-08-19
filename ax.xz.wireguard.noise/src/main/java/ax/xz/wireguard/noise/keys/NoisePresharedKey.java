@@ -1,4 +1,4 @@
-package ax.xz.wireguard.crypto.keys;
+package ax.xz.wireguard.noise.keys;
 
 import java.util.Base64;
 import java.util.Objects;

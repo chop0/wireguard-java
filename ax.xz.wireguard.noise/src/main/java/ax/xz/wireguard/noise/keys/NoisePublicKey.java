@@ -1,4 +1,4 @@
-package ax.xz.wireguard.crypto.keys;
+package ax.xz.wireguard.noise.keys;
 
 import java.io.Serializable;
 import java.util.Arrays;

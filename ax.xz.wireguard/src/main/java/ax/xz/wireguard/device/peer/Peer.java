@@ -1,28 +1,23 @@
 package ax.xz.wireguard.device.peer;
 
-import ax.xz.wireguard.crypto.keys.NoisePresharedKey;
-import ax.xz.wireguard.crypto.keys.NoisePublicKey;
 import ax.xz.wireguard.device.PersistentTaskExecutor;
 import ax.xz.wireguard.device.WireguardDevice;
-import ax.xz.wireguard.message.Message;
-import ax.xz.wireguard.message.MessageInitiation;
-import ax.xz.wireguard.message.MessageResponse;
-import ax.xz.wireguard.message.MessageTransport;
+import ax.xz.wireguard.device.message.Message;
+import ax.xz.wireguard.device.message.MessageInitiation;
+import ax.xz.wireguard.device.message.MessageResponse;
+import ax.xz.wireguard.device.message.MessageTransport;
+import ax.xz.wireguard.noise.keys.NoisePresharedKey;
+import ax.xz.wireguard.noise.keys.NoisePublicKey;
 import ax.xz.wireguard.util.ScopedLogger;
 import org.slf4j.Logger;
 
-import javax.management.*;
 import java.io.IOException;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.VarHandle;
-import java.lang.management.ManagementFactory;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.time.Duration;
-import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-public class Peer implements PeerMBean {
+public class Peer {
 	public static final ScopedValue<Peer> CURRENT_PEER = ScopedValue.newInstance();
 
 	static {
@@ -51,7 +46,6 @@ public class Peer implements PeerMBean {
 		this.keepaliveWorker = new KeepaliveWorker(sessionManager, keepaliveInterval);
 
 		logger.debug("Created peer {}", this);
-		registerPeerMBean();
 	}
 
 	public void start() throws IOException {
@@ -59,11 +53,7 @@ public class Peer implements PeerMBean {
 			throw new IllegalStateException("Peer already started");
 		}
 
-		try {
-			executeWorkers();
-		} finally {
-			unregisterPeerMBean();
-		}
+		executeWorkers();
 	}
 
 	private void executeWorkers() throws IOException {
@@ -107,21 +97,10 @@ public class Peer implements PeerMBean {
 	}
 
 	@Override
-	public int getInboundQueueSize() {
-		return decryptionWorker.getInboundTransportQueueSize();
-	}
-
-	@Override
-	public int getDecryptedQueueSize() {
-		return decryptionWorker.getDecryptedTransportQueueSize();
-	}
-
-	@Override
 	public String toString() {
 		return String.format("Peer{%s, pubkey %s}", getAuthority(), remoteStatic.toString().substring(0, 8));
 	}
 
-	@Override
 	public String getAuthority() {
 		var session = sessionManager.tryGetSessionNow();
 		if (session == null)
@@ -134,38 +113,12 @@ public class Peer implements PeerMBean {
 		return session.getOutboundPacketAddress().toString();
 	}
 
-	public ObjectName getObjectName() {
-		try {
-			return new ObjectName("ax.xz.wireguard:type=Peer" + ",publicKey=" + remoteStatic.toString().substring(0, 8));
-		} catch (MalformedObjectNameException e) {
-			throw new Error(e);
-		}
-	}
-
 	public int writeTransportPacket(ByteBuffer data) throws InterruptedException, IOException {
 		return sessionManager.waitForSession().writeTransportPacket(data);
 	}
 
 	public NoisePresharedKey getPresharedKey() {
 		return presharedKey;
-	}
-
-	private void registerPeerMBean() {
-		try {
-			ManagementFactory.getPlatformMBeanServer().registerMBean(this, getObjectName());
-		} catch (NotCompliantMBeanException | InstanceAlreadyExistsException e) {
-			throw new Error(e);
-		} catch (MBeanRegistrationException e) {
-			logger.warn("Unable to register peer MBean", e);
-		}
-	}
-
-	private void unregisterPeerMBean() {
-		try {
-			ManagementFactory.getPlatformMBeanServer().unregisterMBean(getObjectName());
-		} catch (InstanceNotFoundException | MBeanRegistrationException e) {
-			logger.warn("Unable to unregister peer MBean", e);
-		}
 	}
 
 	record TransportWithSession(MessageTransport transport, EstablishedSession session) {

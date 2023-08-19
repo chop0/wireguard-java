@@ -1,4 +1,4 @@
-package ax.xz.wireguard.crypto;
+package ax.xz.wireguard.noise.crypto;
 
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 

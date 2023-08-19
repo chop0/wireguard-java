@@ -1,22 +1,20 @@
 package ax.xz.wireguard.device;
 
-import ax.xz.wireguard.crypto.keys.NoisePresharedKey;
-import ax.xz.wireguard.crypto.keys.NoisePrivateKey;
-import ax.xz.wireguard.crypto.keys.NoisePublicKey;
+import ax.xz.wireguard.device.message.Message;
+import ax.xz.wireguard.device.message.MessageInitiation;
+import ax.xz.wireguard.device.message.MessageResponse;
+import ax.xz.wireguard.device.message.MessageTransport;
 import ax.xz.wireguard.device.peer.Peer;
-import ax.xz.wireguard.handshake.Handshakes;
-import ax.xz.wireguard.message.Message;
-import ax.xz.wireguard.message.MessageInitiation;
-import ax.xz.wireguard.message.MessageResponse;
-import ax.xz.wireguard.message.MessageTransport;
+import ax.xz.wireguard.noise.handshake.Handshakes;
+import ax.xz.wireguard.noise.keys.NoisePresharedKey;
+import ax.xz.wireguard.noise.keys.NoisePrivateKey;
+import ax.xz.wireguard.noise.keys.NoisePublicKey;
 import ax.xz.wireguard.util.ScopedLogger;
 import org.slf4j.Logger;
 
 import javax.crypto.BadPaddingException;
-import javax.management.*;
 import java.io.Closeable;
 import java.io.IOException;
-import java.lang.management.ManagementFactory;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
@@ -33,7 +31,7 @@ import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
-public final class WireguardDevice implements Closeable, WireguardDeviceMBean {
+public final class WireguardDevice implements Closeable {
 	public static final ScopedValue<WireguardDevice> CURRENT_DEVICE = ScopedValue.newInstance();
 
 	static {
@@ -66,14 +64,6 @@ public final class WireguardDevice implements Closeable, WireguardDeviceMBean {
 			datagramChannel = DatagramChannel.open();
 		} catch (IOException e) {
 			throw new RuntimeException(e);
-		}
-
-		try {
-			ManagementFactory.getPlatformMBeanServer().registerMBean(this, getObjectName());
-		} catch (NotCompliantMBeanException | InstanceAlreadyExistsException e) {
-			throw new Error(e);
-		} catch (MBeanRegistrationException e) {
-			log.warn("Error registering Device MBean", e);
 		}
 	}
 
@@ -144,11 +134,6 @@ public final class WireguardDevice implements Closeable, WireguardDeviceMBean {
 		}
 	}
 
-	@Override
-	public void broadcastTransport(byte[] data) throws InterruptedException {
-		broadcastTransport(ByteBuffer.wrap(data));
-	}
-
 	public ByteBuffer receiveTransport() throws InterruptedException {
 		peerLock.lock();
 
@@ -169,7 +154,6 @@ public final class WireguardDevice implements Closeable, WireguardDeviceMBean {
 		}
 	}
 
-	@Override
 	public void addPeer(NoisePublicKey publicKey, NoisePresharedKey noisePresharedKey, Duration keepaliveInterval, InetSocketAddress endpoint) {
 		var newPeer = new Peer(this, endpoint, publicKey, noisePresharedKey, keepaliveInterval);
 		registerPeer(newPeer);
@@ -190,18 +174,8 @@ public final class WireguardDevice implements Closeable, WireguardDeviceMBean {
 		peerSessionIndices.remove(sessionIndex);
 	}
 
-	@Override
 	public NoisePrivateKey getStaticIdentity() {
 		return staticIdentity;
-	}
-
-	public ObjectName getObjectName() {
-		try {
-			return new ObjectName("ax.xz.wireguard:name=" + this);
-		} catch (MalformedObjectNameException e) {
-			// This should never happen
-			throw new Error(e);
-		}
 	}
 
 	public int physicalLayerMTU() {
@@ -212,12 +186,8 @@ public final class WireguardDevice implements Closeable, WireguardDeviceMBean {
 		this.physicalLayerMTU = mtu;
 	}
 
-	public void close() {
-		try {
-			ManagementFactory.getPlatformMBeanServer().unregisterMBean(getObjectName());
-		} catch (InstanceNotFoundException | MBeanRegistrationException e) {
-			log.warn("Error unregistering device MBean", e);
-		}
+	public void close() throws IOException {
+		datagramChannel.close();
 	}
 
 	public void run() {
@@ -318,26 +288,6 @@ public final class WireguardDevice implements Closeable, WireguardDeviceMBean {
 
 	public DeviceStats getStats() {
 		return new DeviceStats(peers.size(), handshakeCounter.get(), bytesSent.get(), bytesReceived.get());
-	}
-
-	@Override
-	public int getNumberOfHandshakes() {
-		return handshakeCounter.get();
-	}
-
-	@Override
-	public int getNumberOfPeers() {
-		return peers.size();
-	}
-
-	@Override
-	public long getNumberOfBytesSent() {
-		return bytesSent.get();
-	}
-
-	@Override
-	public long getNumberOfBytesReceived() {
-		return bytesReceived.get();
 	}
 
 	@Override

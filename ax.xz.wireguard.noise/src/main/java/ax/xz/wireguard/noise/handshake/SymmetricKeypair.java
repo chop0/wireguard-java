@@ -1,6 +1,6 @@
-package ax.xz.wireguard.handshake;
+package ax.xz.wireguard.noise.handshake;
 
-import ax.xz.wireguard.crypto.chacha20poly1305;
+import ax.xz.wireguard.noise.crypto.chacha20poly1305;
 
 import javax.crypto.BadPaddingException;
 import java.nio.ByteBuffer;
@@ -9,7 +9,7 @@ import java.util.Arrays;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 
-import static ax.xz.wireguard.crypto.chacha20poly1305.NonceSize;
+import static ax.xz.wireguard.noise.crypto.chacha20poly1305.NonceSize;
 
 public final class SymmetricKeypair {
 	private final byte[] sendKey;

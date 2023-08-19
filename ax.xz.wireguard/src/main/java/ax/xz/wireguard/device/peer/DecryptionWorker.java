@@ -1,7 +1,7 @@
 package ax.xz.wireguard.device.peer;
 
 import ax.xz.wireguard.util.ScopedLogger;
-import ax.xz.wireguard.message.MessageTransport;
+import ax.xz.wireguard.device.message.MessageTransport;
 import org.slf4j.Logger;
 
 import java.nio.ByteBuffer;

@@ -1,4 +1,4 @@
-package ax.xz.wireguard.crypto.keys;
+package ax.xz.wireguard.noise.keys;
 
 import org.bouncycastle.math.ec.rfc7748.X25519;
 import org.bouncycastle.util.encoders.Base64;

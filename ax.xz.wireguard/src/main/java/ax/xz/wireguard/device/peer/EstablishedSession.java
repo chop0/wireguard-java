@@ -1,13 +1,12 @@
 package ax.xz.wireguard.device.peer;
 
 import ax.xz.wireguard.device.WireguardDevice;
-import ax.xz.wireguard.handshake.SymmetricKeypair;
-import ax.xz.wireguard.message.MessageTransport;
+import ax.xz.wireguard.noise.handshake.SymmetricKeypair;
+import ax.xz.wireguard.device.message.MessageTransport;
 
 import javax.crypto.BadPaddingException;
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.time.Instant;
 import java.util.concurrent.locks.ReentrantLock;

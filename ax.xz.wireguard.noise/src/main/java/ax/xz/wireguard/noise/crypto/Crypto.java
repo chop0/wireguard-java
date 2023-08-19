@@ -1,4 +1,4 @@
-package ax.xz.wireguard.crypto;
+package ax.xz.wireguard.noise.crypto;
 
 import org.bouncycastle.crypto.digests.Blake2sDigest;
 import org.bouncycastle.crypto.macs.HMac;

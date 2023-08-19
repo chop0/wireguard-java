@@ -2,9 +2,9 @@ package ax.xz.wireguard.device.peer;
 
 import ax.xz.wireguard.device.PersistentTaskExecutor;
 import ax.xz.wireguard.device.WireguardDevice;
-import ax.xz.wireguard.handshake.Handshakes;
-import ax.xz.wireguard.message.MessageInitiation;
-import ax.xz.wireguard.message.MessageResponse;
+import ax.xz.wireguard.noise.handshake.Handshakes;
+import ax.xz.wireguard.device.message.MessageInitiation;
+import ax.xz.wireguard.device.message.MessageResponse;
 import ax.xz.wireguard.util.ScopedLogger;
 import org.slf4j.Logger;
 

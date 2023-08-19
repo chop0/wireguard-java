@@ -1,8 +1,8 @@
-package ax.xz.wireguard.message;
+package ax.xz.wireguard.device.message;
 
-import ax.xz.wireguard.crypto.CookieGenerator;
-import ax.xz.wireguard.crypto.keys.NoisePublicKey;
-import ax.xz.wireguard.crypto.chacha20poly1305;
+import ax.xz.wireguard.noise.crypto.CookieGenerator;
+import ax.xz.wireguard.noise.keys.NoisePublicKey;
+import ax.xz.wireguard.noise.crypto.chacha20poly1305;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -38,7 +38,7 @@ public final class MessageResponse extends PooledMessage implements Message {
 		buffer.put(localEphemeral.data());
 		buffer.put(encryptedEmpty);
 
-		CookieGenerator.appendMacs(initiatorKey, buffer);
+		CookieGenerator.appendMacs(initiatorKey.data(), buffer);
 		buffer.flip();
 
 		return new MessageResponse(buffer);

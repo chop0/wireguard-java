@@ -1,4 +1,4 @@
-import ax.xz.wireguard.crypto.keys.NoisePrivateKey;
+import ax.xz.wireguard.noise.keys.NoisePrivateKey;
 import ax.xz.wireguard.device.WireguardDevice;
 import packet.ICMPv6;
 import packet.IPv6;

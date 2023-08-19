@@ -1,11 +1,11 @@
-package ax.xz.wireguard.handshake;
+package ax.xz.wireguard.noise.handshake;
 
-import ax.xz.wireguard.util.ScopedLogger;
-import ax.xz.wireguard.crypto.keys.NoisePresharedKey;
-import ax.xz.wireguard.crypto.keys.NoisePrivateKey;
-import ax.xz.wireguard.crypto.keys.NoisePublicKey;
-import ax.xz.wireguard.crypto.chacha20poly1305;
+import ax.xz.wireguard.noise.keys.NoisePresharedKey;
+import ax.xz.wireguard.noise.keys.NoisePrivateKey;
+import ax.xz.wireguard.noise.keys.NoisePublicKey;
+import ax.xz.wireguard.noise.crypto.chacha20poly1305;
 import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.crypto.BadPaddingException;
 import java.nio.ByteBuffer;
@@ -14,7 +14,7 @@ import java.security.DigestException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
-import static ax.xz.wireguard.crypto.Crypto.*;
+import static ax.xz.wireguard.noise.crypto.Crypto.*;
 
 public class Handshakes {
 	private static final byte[] ZeroNonce = new byte[chacha20poly1305.NonceSize];
@@ -46,7 +46,7 @@ public class Handshakes {
 	}
 
 	public static class InitiatorStageOne {
-		private static final Logger logger = ScopedLogger.getLogger(InitiatorStageOne.class);
+		private static final Logger logger = LoggerFactory.getLogger(InitiatorStageOne.class);
 
 		private final byte[] hash = INITIAL_HASH.clone();
 		private final byte[] chainKey = INITIAL_CHAIN_KEY.clone();

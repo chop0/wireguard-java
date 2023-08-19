@@ -1,9 +1,9 @@
-package ax.xz.wireguard.message;
+package ax.xz.wireguard.device.message;
 
-import ax.xz.wireguard.crypto.CookieGenerator;
-import ax.xz.wireguard.crypto.Crypto;
-import ax.xz.wireguard.crypto.keys.NoisePublicKey;
-import ax.xz.wireguard.crypto.chacha20poly1305;
+import ax.xz.wireguard.noise.crypto.CookieGenerator;
+import ax.xz.wireguard.noise.crypto.Crypto;
+import ax.xz.wireguard.noise.keys.NoisePublicKey;
+import ax.xz.wireguard.noise.crypto.chacha20poly1305;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -37,7 +37,7 @@ public final class MessageInitiation extends PooledMessage implements Message {
 		if (buffer.remaining() < 32)
 			throw new IllegalArgumentException("Buffer needs 32 bytes remaining for the macs");
 
-		CookieGenerator.appendMacs(remoteStatic, buffer);
+		CookieGenerator.appendMacs(remoteStatic.data(), buffer);
 
 		buffer.flip();
 		return buffer;

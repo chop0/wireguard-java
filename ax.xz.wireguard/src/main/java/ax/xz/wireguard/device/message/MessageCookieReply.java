@@ -1,6 +1,6 @@
-package ax.xz.wireguard.message;
+package ax.xz.wireguard.device.message;
 
-import ax.xz.wireguard.crypto.Crypto;
+import ax.xz.wireguard.noise.crypto.Crypto;
 
 public record MessageCookieReply(int type, int receiver, byte[] nonce, byte[] cookie) implements Message {
 	public MessageCookieReply {
