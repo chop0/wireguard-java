@@ -1,9 +1,7 @@
-package ax.xz.wireguard;
-
 import ax.xz.wireguard.crypto.keys.NoisePrivateKey;
 import ax.xz.wireguard.device.WireguardDevice;
-import ax.xz.wireguard.packet.ICMPv6;
-import ax.xz.wireguard.packet.IPv6;
+import packet.ICMPv6;
+import packet.IPv6;
 
 import java.net.Inet6Address;
 import java.net.InetAddress;
