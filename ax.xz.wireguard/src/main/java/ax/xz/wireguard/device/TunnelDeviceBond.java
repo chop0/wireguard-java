@@ -1,16 +1,19 @@
 package ax.xz.wireguard.device;
 
 import ax.xz.raw.spi.RawSocket;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+
+import static java.lang.System.Logger;
+import static java.lang.System.Logger.Level.DEBUG;
+import static java.lang.System.Logger.Level.WARNING;
 
 public class TunnelDeviceBond {
-	private static final Logger logger = LoggerFactory.getLogger(TunnelDeviceBond.class);
+	private static final Logger logger = System.getLogger(TunnelDeviceBond.class.getName());
 
 	private final WireguardDevice device;
 	private final RawSocket tunnel;
@@ -25,7 +28,7 @@ public class TunnelDeviceBond {
 	public void run() throws InterruptedException {
 		device.setPhysicalLayerMTU(tunnel.mtu() + 40 + 16);
 
-		try (var sts = new PersistentTaskExecutor<>(RuntimeException::new, logger)) {
+		try (var sts = new PersistentTaskExecutor<>("TunnelDeviceBond", RuntimeException::new, logger)) {
 			sts.fork(() -> {
 				device.run();
 				return null;
@@ -42,7 +45,7 @@ public class TunnelDeviceBond {
 
 						device.broadcastTransport(buffer);
 					} catch (IOException e) {
-						logger.warn("Error reading from tunnel", e);
+						logger.log(WARNING, "Error reading from tunnel", e);
 						break;
 					}
 				}
@@ -60,8 +63,8 @@ public class TunnelDeviceBond {
 				return null;
 			});
 
-			try (var sch = Executors.newScheduledThreadPool(0, Thread.ofVirtual().factory())) {
-				sch.scheduleAtFixedRate(() -> logger.debug(device.getStats().toString()), 0, 1, java.util.concurrent.TimeUnit.SECONDS);
+			try (var sch = new ScheduledThreadPoolExecutor(0, Thread.ofVirtual().factory())) {
+				sch.scheduleAtFixedRate(() -> logger.log(DEBUG, device.getStats().toString()), 0, 1, java.util.concurrent.TimeUnit.SECONDS);
 
 				sts.join();
 			}

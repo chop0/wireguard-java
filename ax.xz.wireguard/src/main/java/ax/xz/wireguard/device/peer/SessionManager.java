@@ -2,11 +2,9 @@ package ax.xz.wireguard.device.peer;
 
 import ax.xz.wireguard.device.PersistentTaskExecutor;
 import ax.xz.wireguard.device.WireguardDevice;
-import ax.xz.wireguard.noise.handshake.Handshakes;
 import ax.xz.wireguard.device.message.MessageInitiation;
 import ax.xz.wireguard.device.message.MessageResponse;
-import ax.xz.wireguard.util.ScopedLogger;
-import org.slf4j.Logger;
+import ax.xz.wireguard.noise.handshake.Handshakes;
 
 import javax.crypto.BadPaddingException;
 import java.io.IOException;
@@ -22,8 +20,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
+import static java.lang.System.Logger;
+import static java.lang.System.Logger.Level.*;
+
 class SessionManager implements Runnable {
-	private static final Logger logger = ScopedLogger.getLogger(SessionManager.class);
+	private static final Logger logger = System.getLogger(SessionManager.class.getName());
 
 	private final ReentrantLock sessionLock = new ReentrantLock();
 	private final Condition sessionChangedCondition = sessionLock.newCondition();
@@ -58,10 +59,10 @@ class SessionManager implements Runnable {
 	}
 
 	private void recordIOException(IOException e) {
-		logger.warn("Detected broken connection to {}", peer.getAuthority());
+		logger.log(WARNING, "Detected broken connection to {0}", peer.getAuthority());
 
 		if (endpoint != null) {
-			logger.debug("Attempting to recover connection using endpoint");
+			logger.log(DEBUG, "Attempting to recover connection using endpoint");
 			setSession(null);
 			sessionChangedCondition.signalAll();
 		}
@@ -93,18 +94,18 @@ class SessionManager implements Runnable {
 	}
 
 	public void run() {
-		try (var executor = new PersistentTaskExecutor<>(IOException::new, logger)) {
+		try (var executor = new PersistentTaskExecutor<>("Session workers", IOException::new, logger)) {
 			executor.submit("Session initiation thread", this::sessionInitiationThread);
 			executor.submit("Handshake responder thread", this::handshakeResponderThread);
 
 			executor.join();
 		} catch (InterruptedException e) {
-			logger.debug("Broken connection worker interrupted");
+			logger.log(DEBUG, "Broken connection worker interrupted");
 		} catch (Throwable e) {
-			logger.warn("Unhandled error in broken connection worker", e);
+			logger.log(WARNING, "Unhandled error in broken connection worker", e);
 			throw e;
 		} finally {
-			logger.debug("Broken connection worker shutting down");
+			logger.log(DEBUG, "Broken connection worker shutting down");
 		}
 	}
 
@@ -118,10 +119,10 @@ class SessionManager implements Runnable {
 						try {
 							setSession(performInitiatorHandshake());
 						} catch (Throwable bpe) {
-							logger.warn("Failed to complete handshake", bpe);
+							logger.log(WARNING, "Failed to complete handshake", bpe);
 						}
 					} else {
-						logger.warn("No endpoint set;  waiting for remote handshake initiation");
+						logger.log(WARNING, "No endpoint set;  waiting for remote handshake initiation");
 					}
 				}
 
@@ -130,7 +131,7 @@ class SessionManager implements Runnable {
 				sessionChangedCondition.await(timeTillExpiration.toMillis(), TimeUnit.MILLISECONDS);
 			}
 		} catch (InterruptedException e) {
-			logger.debug("Session initiation thread interrupted");
+			logger.log(DEBUG, "Session initiation thread interrupted");
 		} finally {
 			sessionLock.unlock();
 		}
@@ -147,7 +148,7 @@ class SessionManager implements Runnable {
 		try {
 			while (!Thread.interrupted()) {
 				var initiation = inboundHandshakeInitiationQueue.take();
-				logger.info("Received handshake initiation from {}", initiation.getValue());
+				logger.log(INFO, "Received handshake initiation from {0}", initiation.getValue());
 
 				sessionLock.lock();
 				try {
@@ -161,7 +162,7 @@ class SessionManager implements Runnable {
 					transmit(packet.buffer(), address);
 
 					setSession(new EstablishedSession(device, handshake.getKeypair(), address, localIndex, message.sender()));
-					logger.info("Completed handshake with {} (responder)", peer.getAuthority());
+					logger.log(INFO, "Completed handshake with {0} (responder)", peer.getAuthority());
 				} catch (BadPaddingException e) {
 					continue;
 				} catch (IOException e) {
@@ -171,7 +172,7 @@ class SessionManager implements Runnable {
 				}
 			}
 		} catch (InterruptedException e) {
-			logger.debug("Handshake responder thread interrupted");
+			logger.log(DEBUG, "Handshake responder thread interrupted");
 		}
 	}
 
@@ -198,7 +199,7 @@ class SessionManager implements Runnable {
 
 	private EstablishedSession performInitiatorHandshake() throws IOException, BadPaddingException, InterruptedException {
 		while (true) {
-			logger.info("Initiating handshake");
+			logger.log(INFO, "Initiating handshake");
 
 			var handshake = Handshakes.initiateHandshake(device.getStaticIdentity(), peer.getRemoteStatic(), peer.getPresharedKey());
 
@@ -212,7 +213,7 @@ class SessionManager implements Runnable {
 
 			var response = inboundHandshakeResponseQueue.poll(5, TimeUnit.SECONDS);
 			if (response == null) {
-				logger.warn("Timed out waiting for handshake response");
+				logger.log(WARNING, "Timed out waiting for handshake response");
 				continue;
 			}
 

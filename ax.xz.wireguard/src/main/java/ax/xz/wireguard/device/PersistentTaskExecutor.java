@@ -1,6 +1,7 @@
 package ax.xz.wireguard.device;
 
-import org.slf4j.Logger;
+import static java.lang.System.Logger;
+import static java.lang.System.Logger.Level.*;
 
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
@@ -25,7 +26,8 @@ public class PersistentTaskExecutor<E extends Exception> extends StructuredTaskS
 	private final Function<Exception, E> exceptionMapper;
 	private final Logger logger;
 
-	public PersistentTaskExecutor(Function<Exception, E> exceptionMapper, Logger logger) {
+	public PersistentTaskExecutor(String name, Function<Exception, E> exceptionMapper, Logger logger) {
+		super(name, Thread.ofVirtual().factory());
 		this.exceptionMapper = exceptionMapper;
 		this.logger = logger;
 	}
@@ -35,7 +37,7 @@ public class PersistentTaskExecutor<E extends Exception> extends StructuredTaskS
 		super.handleComplete(subtask);
 
 		if (subtask.state() == Subtask.State.FAILED && FIRST_EXCEPTION.compareAndSet(this, null, subtask.exception())) {
-			logger.error("Persistent task failed", firstException);
+			logger.log(ERROR, "Persistent task failed", firstException);
 			shutdown();
 		}
 	}
@@ -46,7 +48,7 @@ public class PersistentTaskExecutor<E extends Exception> extends StructuredTaskS
 			try {
 				task.run();
 			} catch (InterruptedException e) {
-				logger.warn("Persistent task interrupted");
+				logger.log(WARNING, "Persistent task interrupted");
 				throw e;
 			}
 

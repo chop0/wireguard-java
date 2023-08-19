@@ -4,7 +4,8 @@ import ax.xz.wireguard.noise.keys.NoisePresharedKey;
 import ax.xz.wireguard.noise.keys.NoisePrivateKey;
 import ax.xz.wireguard.noise.keys.NoisePublicKey;
 import ax.xz.wireguard.noise.crypto.chacha20poly1305;
-import org.slf4j.Logger;
+import static java.lang.System.Logger;
+import static java.lang.System.Logger.Level.*;
 import org.slf4j.LoggerFactory;
 
 import javax.crypto.BadPaddingException;
@@ -46,7 +47,7 @@ public class Handshakes {
 	}
 
 	public static class InitiatorStageOne {
-		private static final Logger logger = LoggerFactory.getLogger(InitiatorStageOne.class);
+		private static final Logger logger = System.getLogger(InitiatorStageOne.class.getName());
 
 		private final byte[] hash = INITIAL_HASH.clone();
 		private final byte[] chainKey = INITIAL_CHAIN_KEY.clone();
@@ -121,7 +122,7 @@ public class Handshakes {
 			KDF2(sendKey, receiveKey, this.chainKey, new byte[0]);
 			var kp = new SymmetricKeypair(sendKey, receiveKey);
 
-			logger.debug("DH key exchange completed");
+			logger.log(DEBUG, "DH key exchange completed");
 			return kp;
 		}
 

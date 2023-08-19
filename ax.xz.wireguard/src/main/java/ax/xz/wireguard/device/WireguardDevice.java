@@ -9,8 +9,6 @@ import ax.xz.wireguard.noise.handshake.Handshakes;
 import ax.xz.wireguard.noise.keys.NoisePresharedKey;
 import ax.xz.wireguard.noise.keys.NoisePrivateKey;
 import ax.xz.wireguard.noise.keys.NoisePublicKey;
-import ax.xz.wireguard.util.ScopedLogger;
-import org.slf4j.Logger;
 
 import javax.crypto.BadPaddingException;
 import java.io.Closeable;
@@ -31,14 +29,13 @@ import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
+import static java.lang.System.Logger;
+import static java.lang.System.Logger.Level.*;
+
 public final class WireguardDevice implements Closeable {
 	public static final ScopedValue<WireguardDevice> CURRENT_DEVICE = ScopedValue.newInstance();
 
-	static {
-		ScopedLogger.addScopedMarker("device", CURRENT_DEVICE);
-	}
-
-	private static final Logger log = ScopedLogger.getLogger(WireguardDevice.class);
+	private static final Logger log = System.getLogger(WireguardDevice.class.getName());
 
 	private final NoisePrivateKey staticIdentity;
 
@@ -195,13 +192,13 @@ public final class WireguardDevice implements Closeable {
 	}
 
 	private void run0() {
-		try (var outerExecutor = new PersistentTaskExecutor<>(RuntimeException::new, log)) { // RuntimeException, since we don't expect this to recover
+		try (var outerExecutor = new PersistentTaskExecutor<>("Device executor", RuntimeException::new, log)) { // RuntimeException, since we don't expect this to recover
 			outerExecutor.submit("Inbound packet listener", () -> {
 				while (!Thread.interrupted()) {
 					try {
 						receive();
 					} catch (IOException e) {
-						log.error("Error receiving packet", e);
+						log.log(ERROR, "Error receiving packet", e);
 					}
 				}
 			});
@@ -220,26 +217,31 @@ public final class WireguardDevice implements Closeable {
 			outerExecutor.join();
 			outerExecutor.throwIfFailed();
 		} catch (InterruptedException e) {
-			log.debug("Receive loop interrupted", e);
+			log.log(DEBUG, "Receive loop interrupted", e);
 		} catch (Throwable e) {
-			log.error("Error in receive loop", e);
+			log.log(ERROR, "Error in receive loop", e);
 			throw e;
 		}
 	}
 
 	private class PeerExecutor extends StructuredTaskScope<Void> {
+		public PeerExecutor() {
+			super("Peer executor", Thread.ofVirtual().factory());
+		}
+
 		public void submit(Peer peer) {
-			Runnable peerRunnable = () -> ScopedValue.runWhere(Peer.CURRENT_PEER, peer, () -> {
+			Runnable peerRunnable = () -> {
 				try {
 					peer.start();
 				} catch (IOException t) {
-					log.warn("Error in peer loop;  removing the peer", t);
+					log.log(WARNING, "Error in peer loop;  removing the peer", t);
 				} finally {
 					deletePeer(peer);
 				}
-			});
+			};
 
 			fork(() -> {
+				Thread.currentThread().setName(peer.toString());
 				peerRunnable.run();
 				return null;
 			});
@@ -257,7 +259,7 @@ public final class WireguardDevice implements Closeable {
 			handleMessage((InetSocketAddress) addr, Message.parse(buffer));
 			bytesReceived.addAndGet(recv);
 		} catch (BadPaddingException e) {
-			log.warn("Received message with invalid padding");
+			log.log(WARNING, "Received message with invalid padding");
 		}
 	}
 

@@ -1,8 +1,5 @@
 package ax.xz.wireguard.device.peer;
 
-import ax.xz.wireguard.util.ScopedLogger;
-import org.slf4j.Logger;
-
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.time.Duration;
@@ -12,8 +9,11 @@ import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
+import static java.lang.System.Logger;
+import static java.lang.System.Logger.Level.*;
+
 class KeepaliveWorker implements Runnable {
-	private static final Logger logger = ScopedLogger.getLogger(KeepaliveWorker.class);
+	private static final Logger logger = System.getLogger(KeepaliveWorker.class.getName());
 
 	private final SessionManager sessionManager;
 
@@ -42,7 +42,7 @@ class KeepaliveWorker implements Runnable {
 					try {
 						sendKeepalive();
 					} catch (IOException e) {
-						logger.warn("Keepalive failed", e);
+						logger.log(WARNING, "Keepalive failed", e);
 					}
 				}
 
@@ -50,20 +50,20 @@ class KeepaliveWorker implements Runnable {
 				keepaliveCondition.await(keepaliveInterval.toMillis(), TimeUnit.MILLISECONDS);
 			}
 		} catch (InterruptedException e) {
-			logger.debug("Keepalive worker interrupted");
+			logger.log(DEBUG, "Keepalive worker interrupted");
 		} catch (Throwable e) {
-			logger.error("Keepalive worker failed", e);
+			logger.log(ERROR, "Keepalive worker failed", e);
 			throw e;
 		} finally {
 			lock.unlock();
-			logger.debug("Keepalive worker shutting down");
+			logger.log(DEBUG, "Keepalive worker shutting down");
 		}
 	}
 
 	private void sendKeepalive() throws IOException {
 		var session = sessionManager.tryGetSessionNow();
 		if (session == null) { // possible race
-			logger.warn("Could not send keepalive (session dead?)");
+			logger.log(WARNING, "Could not send keepalive (session dead?)");
 			return;
 		}
 
@@ -72,7 +72,7 @@ class KeepaliveWorker implements Runnable {
 		lastKeepalive = Instant.now();
 		keepaliveRequested = false;
 
-		logger.debug("Sent keepalive");
+		logger.log(DEBUG, "Sent keepalive");
 	}
 
 	void requestKeepalive() {

@@ -1,16 +1,18 @@
 package ax.xz.wireguard.device.peer;
 
-import ax.xz.wireguard.util.ScopedLogger;
 import ax.xz.wireguard.device.message.MessageTransport;
-import org.slf4j.Logger;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.StructuredTaskScope;
 
+import static java.lang.System.Logger;
+import static java.lang.System.Logger.Level.DEBUG;
+import static java.lang.System.Logger.Level.WARNING;
+
 class DecryptionWorker implements Runnable {
-	private static final Logger logger = ScopedLogger.getLogger(DecryptionWorker.class);
+	private static final Logger logger = System.getLogger(DecryptionWorker.class.getName());
 
 	private final SessionManager sessionManager;
 
@@ -47,9 +49,9 @@ class DecryptionWorker implements Runnable {
 				processMessages(awaitInboundMessages());
 			}
 		} catch (InterruptedException e) {
-			logger.debug("Decryption worker interrupted");
+			logger.log(DEBUG, "Decryption worker interrupted");
 		} finally {
-			logger.debug("Decryption worker shutting down");
+			logger.log(DEBUG, "Decryption worker shutting down");
 		}
 	}
 
@@ -93,7 +95,7 @@ class DecryptionWorker implements Runnable {
 				return false;
 
 			if (inb.transport().content().remaining() < 16) {
-				logger.warn("Received transport message with invalid length");
+				logger.log(WARNING, "Received transport message with invalid length");
 				return false;
 			}
 
@@ -102,13 +104,13 @@ class DecryptionWorker implements Runnable {
 			result.flip();
 
 			if (result.remaining() == 0) {
-				logger.debug("Received keepalive");
+				logger.log(DEBUG, "Received keepalive");
 			} else
 				decryptedTransportQueue.add(result);
 
 			return true;
 		} catch (Throwable e) {
-			logger.warn("Error decrypting transport message (is the Device MTU big enough?)", e);
+			logger.log(WARNING, "Error decrypting transport message (is the Device MTU big enough?)", e);
 		}
 
 		return false;

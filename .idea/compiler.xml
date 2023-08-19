@@ -5,5 +5,8 @@
   </component>
   <component name="JavacSettings">
     <option name="ADDITIONAL_OPTIONS_STRING" value="--enable-preview --source 21" />
+    <option name="ADDITIONAL_OPTIONS_OVERRIDE">
+      <module name="ax.xz.logging" options="--enable-preview --source 21 --add-exports java.base/jdk.internal.misc=ax.xz.logging --add-exports java.base/jdk.internal.vm=ax.xz.logging" />
+    </option>
   </component>
 </project>

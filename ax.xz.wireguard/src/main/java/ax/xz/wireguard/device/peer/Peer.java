@@ -8,24 +8,20 @@ import ax.xz.wireguard.device.message.MessageResponse;
 import ax.xz.wireguard.device.message.MessageTransport;
 import ax.xz.wireguard.noise.keys.NoisePresharedKey;
 import ax.xz.wireguard.noise.keys.NoisePublicKey;
-import ax.xz.wireguard.util.ScopedLogger;
-import org.slf4j.Logger;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
+import java.text.MessageFormat;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import static java.lang.System.Logger;
+import static java.lang.System.Logger.Level.*;
+
 public class Peer {
-	public static final ScopedValue<Peer> CURRENT_PEER = ScopedValue.newInstance();
-
-	static {
-		ScopedLogger.addScopedMarker("peer", CURRENT_PEER);
-	}
-
 	// Logger
-	private static final Logger logger = ScopedLogger.getLogger(Peer.class);
+	private static final Logger logger = System.getLogger(Peer.class.getName());
 
 	// Instance variables
 	private final NoisePublicKey remoteStatic;
@@ -44,8 +40,7 @@ public class Peer {
 		this.presharedKey = presharedKey;
 		this.decryptionWorker = new DecryptionWorker(sessionManager);
 		this.keepaliveWorker = new KeepaliveWorker(sessionManager, keepaliveInterval);
-
-		logger.debug("Created peer {}", this);
+		logger.log(DEBUG, "Created peer {0}", this);
 	}
 
 	public void start() throws IOException {
@@ -57,7 +52,7 @@ public class Peer {
 	}
 
 	private void executeWorkers() throws IOException {
-		try (var executor = new PersistentTaskExecutor<>(IOException::new, logger)) {
+		try (var executor = new PersistentTaskExecutor<>(toString(), IOException::new, logger)) {
 			executor.submit("Keepalive worker", keepaliveWorker::run);
 			executor.submit("Decryption worker", decryptionWorker::run);
 			executor.submit("Session worker", sessionManager::run);
@@ -65,7 +60,7 @@ public class Peer {
 			executor.join();
 			executor.throwIfFailed();
 		} catch (InterruptedException e) {
-			logger.info("Peer {} interrupted", this);
+			logger.log(INFO, "Peer {0} interrupted", this);
 		}
 	}
 
@@ -88,7 +83,7 @@ public class Peer {
 			case MessageTransport transport -> decryptionWorker.receiveTransport(transport);
 			case MessageInitiation initiation -> sessionManager.receiveInitiation(address, initiation);
 			case MessageResponse response -> sessionManager.receiveHandshakeResponse(address, response);
-			default -> logger.warn("Received unexpected message type: {}", message);
+			default -> logger.log(WARNING, "Received unexpected message type: {0}", message);
 		}
 	}
 

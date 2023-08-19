@@ -1,6 +1,4 @@
 module ax.xz.wireguard {
-	requires org.slf4j;
-
 	requires ax.xz.raw;
 
 	exports ax.xz.wireguard.cli;
