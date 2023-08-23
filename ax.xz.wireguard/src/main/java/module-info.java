@@ -7,4 +7,5 @@ module ax.xz.wireguard {
 	opens ax.xz.wireguard.device.peer to ax.xz.logging;
 
 	requires ax.xz.wireguard.noise;
+	requires jsr305;
 }

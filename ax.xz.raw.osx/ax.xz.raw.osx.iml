@@ -8,5 +8,6 @@
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="module" module-name="ax.xz.raw" exported="" />
+    <orderEntry type="library" name="jsr305-3.0.2" level="project" />
   </component>
 </module>

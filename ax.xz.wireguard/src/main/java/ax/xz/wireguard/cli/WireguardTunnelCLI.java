@@ -10,6 +10,7 @@ import java.net.InetSocketAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+@SuppressWarnings("UseOfSystemOutOrSystemErr")
 public class WireguardTunnelCLI {
 	public static void printHelp(String cmdline) {
 		System.out.printf("usage: %s <file>\n", cmdline);

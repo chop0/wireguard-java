@@ -11,5 +11,15 @@
     <orderEntry type="module" module-name="ax.xz.raw" />
     <orderEntry type="module" module-name="ax.xz.raw.osx" scope="RUNTIME" />
     <orderEntry type="module" module-name="ax.xz.wireguard.noise" />
+    <orderEntry type="module-library">
+      <library>
+        <CLASSES>
+          <root url="jar://$MODULE_DIR$/../lib/javax.annotation-api-1.3.2.jar!/" />
+        </CLASSES>
+        <JAVADOC />
+        <SOURCES />
+      </library>
+    </orderEntry>
+    <orderEntry type="library" name="jsr305-3.0.2" level="project" />
   </component>
 </module>

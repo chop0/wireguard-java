@@ -1,5 +1,6 @@
 package ax.xz.wireguard.device;
 
+import ax.xz.wireguard.MultipleResultTaskScope;
 import ax.xz.wireguard.device.message.Message;
 import ax.xz.wireguard.device.message.MessageInitiation;
 import ax.xz.wireguard.device.message.MessageResponse;
@@ -19,10 +20,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.DatagramChannel;
 import java.time.Duration;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.StructuredTaskScope;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Condition;
@@ -42,8 +40,8 @@ public final class WireguardDevice implements Closeable {
 	private final ConcurrentHashMap<NoisePublicKey, Peer> peers = new ConcurrentHashMap<>();
 	private final ConcurrentHashMap<Integer, Peer> peerSessionIndices = new ConcurrentHashMap<>();
 
-	private final Lock peerLock = new ReentrantLock();
-	private final Condition peerCondition = peerLock.newCondition();
+	private final Lock peerListLock = new ReentrantLock();
+	private final Condition peerCondition = peerListLock.newCondition();
 
 
 	private final DatagramChannel datagramChannel;
@@ -51,6 +49,7 @@ public final class WireguardDevice implements Closeable {
 	private final AtomicInteger handshakeCounter = new AtomicInteger(0);
 	private final AtomicLong bytesSent = new AtomicLong(0);
 	private final AtomicLong bytesReceived = new AtomicLong(0);
+	private final AtomicLong dataSent = new AtomicLong(0);
 
 	private int physicalLayerMTU = 1420;
 
@@ -64,25 +63,10 @@ public final class WireguardDevice implements Closeable {
 		}
 	}
 
-	public void deletePeer(NoisePublicKey publicKey) {
-		peerLock.lock();
-
-		try {
-			peerSessionIndices.remove(peers.remove(publicKey).sessionIndex());
-		} finally {
-			peerLock.unlock();
-		}
-	}
-
-	private void deletePeer(Peer peer) {
-		deletePeer(peer.getRemoteStatic());
-	}
-
-
 	private final LinkedBlockingQueue<Peer> unstartedPeers = new LinkedBlockingQueue<>();
 
 	private void registerPeer(Peer newPeer) {
-		peerLock.lock();
+		peerListLock.lock();
 
 		try {
 			var publicKey = newPeer.getRemoteStatic();
@@ -91,19 +75,20 @@ public final class WireguardDevice implements Closeable {
 
 			unstartedPeers.add(newPeer);
 		} finally {
-			peerLock.unlock();
+			peerListLock.unlock();
 		}
 	}
 
-	private Peer addOrGetPeer(NoisePublicKey publicKey, Duration keepaliveInterval) {
-		if (peers.containsKey(publicKey))
-			return peers.get(publicKey);
+	private void deregisterPeer(Peer peer) {
+		peerListLock.lock();
 
-		NoisePresharedKey presharedKey = new NoisePresharedKey(new byte[NoisePresharedKey.LENGTH]);
-		var newPeer = new Peer(this, null, publicKey, presharedKey, keepaliveInterval);
-		registerPeer(newPeer);
-
-		return newPeer;
+		try {
+			var publicKey = peer.getRemoteStatic();
+			peers.remove(publicKey);
+			peerCondition.signalAll();
+		} finally {
+			peerListLock.unlock();
+		}
 	}
 
 	public void bind(SocketAddress endpoint) throws IOException {
@@ -111,48 +96,49 @@ public final class WireguardDevice implements Closeable {
 	}
 
 	public void broadcastTransport(ByteBuffer data) throws InterruptedException, IOException {
-		peerLock.lock();
+		peerListLock.lock();
 
-		try (var sts = new StructuredTaskScope.ShutdownOnFailure()) {
+		try (var sts = new MultipleResultTaskScope<Integer>()) {
 			for (var peer : peers.values()) {
-				sts.fork(() -> peer.writeTransportPacket(data));
+				sts.fork(() -> {
+					try {
+						return peer.writeTransportPacket(data);
+					} catch (IOException e) {
+						log.log(WARNING, "Error sending transport packet", e);
+						return 0;
+					}
+				});
 			}
 
 			sts.join();
-			sts.throwIfFailed();
-		} catch (ExecutionException e) {
-			if (e.getCause() instanceof IOException ex) {
-				throw ex;
-			} else if (e.getCause() instanceof InterruptedException ex) {
-				throw ex;
-			}
+			sts.results().forEach(dataSent::addAndGet);
 		} finally {
-			peerLock.unlock();
+			peerListLock.unlock();
 		}
 	}
 
 	public ByteBuffer receiveTransport() throws InterruptedException {
-		peerLock.lock();
-
 		try (var sts = new StructuredTaskScope.ShutdownOnSuccess<ByteBuffer>()) {
-			while (peers.isEmpty()) {
-				peerCondition.await();
+			peerListLock.lock();
+
+			try {
+				while (peers.isEmpty()) {
+					peerCondition.await();
+				}
+				peers.forEachValue(1, peer -> sts.fork(peer::readTransportPacket));
+			} finally {
+				peerListLock.unlock();
 			}
 
-			peers.forEachValue(1, peer -> sts.fork(peer::readTransportPacket));
-
 			sts.join();
-
 			return sts.result();
 		} catch (ExecutionException e) {
 			throw new Error(e);
-		} finally {
-			peerLock.unlock();
 		}
 	}
 
 	public void addPeer(NoisePublicKey publicKey, NoisePresharedKey noisePresharedKey, Duration keepaliveInterval, InetSocketAddress endpoint) {
-		var newPeer = new Peer(this, endpoint, publicKey, noisePresharedKey, keepaliveInterval);
+		var newPeer = new Peer(this, new Peer.PeerConnectionInfo(publicKey, noisePresharedKey, endpoint, keepaliveInterval));
 		registerPeer(newPeer);
 	}
 
@@ -188,40 +174,38 @@ public final class WireguardDevice implements Closeable {
 	}
 
 	public void run() {
-		ScopedValue.runWhere(CURRENT_DEVICE, this, this::run0);
-	}
-
-	private void run0() {
-		try (var outerExecutor = new PersistentTaskExecutor<>("Device executor", RuntimeException::new, log)) { // RuntimeException, since we don't expect this to recover
-			outerExecutor.submit("Inbound packet listener", () -> {
-				while (!Thread.interrupted()) {
-					try {
-						receive();
-					} catch (IOException e) {
-						log.log(ERROR, "Error receiving packet", e);
-					}
-				}
-			});
-
-			outerExecutor.submit("Peer starter", () -> {
-				try (var peerExecutor = new PeerExecutor()) {
+		ScopedValue.runWhere(CURRENT_DEVICE, this, () -> {
+			try (var outerExecutor = new PersistentTaskExecutor<>("Device executor", RuntimeException::new, log)) { // RuntimeException, since we don't expect this to recover
+				outerExecutor.submit("Inbound packet listener", () -> {
 					while (!Thread.interrupted()) {
-						var peer = unstartedPeers.take();
-						peerExecutor.submit(peer);
+						try {
+							receive();
+						} catch (IOException e) {
+							log.log(ERROR, "Error receiving packet", e);
+						}
 					}
+				});
 
-					peerExecutor.join();
-				}
-			});
+				outerExecutor.submit("Peer starter", () -> {
+					try (var peerExecutor = new PeerExecutor()) {
+						while (!Thread.interrupted()) {
+							var peer = unstartedPeers.take();
+							peerExecutor.submit(peer);
+						}
 
-			outerExecutor.join();
-			outerExecutor.throwIfFailed();
-		} catch (InterruptedException e) {
-			log.log(DEBUG, "Receive loop interrupted", e);
-		} catch (Throwable e) {
-			log.log(ERROR, "Error in receive loop", e);
-			throw e;
-		}
+						peerExecutor.join();
+					}
+				});
+
+				outerExecutor.join();
+				outerExecutor.throwIfFailed();
+			} catch (InterruptedException e) {
+				log.log(DEBUG, "Receive loop interrupted", e);
+			} catch (Throwable e) {
+				log.log(ERROR, "Error in receive loop", e);
+				throw e;
+			}
+		});
 	}
 
 	private class PeerExecutor extends StructuredTaskScope<Void> {
@@ -234,9 +218,10 @@ public final class WireguardDevice implements Closeable {
 				try {
 					peer.start();
 				} catch (IOException t) {
-					log.log(WARNING, "Error in peer loop;  removing the peer", t);
+					log.log(WARNING, "Error in peer loop", t);
 				} finally {
-					deletePeer(peer);
+					log.log(DEBUG, "Peer {0} exited", peer);
+					deregisterPeer(peer);
 				}
 			};
 
@@ -278,7 +263,14 @@ public final class WireguardDevice implements Closeable {
 		var handshake = Handshakes.responderHandshake(staticIdentity, message.ephemeral(), message.encryptedStatic(), message.encryptedTimestamp());
 
 		var remoteStatic = handshake.getRemotePublicKey();
-		return addOrGetPeer(remoteStatic, Duration.ofSeconds(30));
+		if (peers.containsKey(remoteStatic))
+			return peers.get(remoteStatic);
+
+		NoisePresharedKey presharedKey = new NoisePresharedKey(new byte[NoisePresharedKey.LENGTH]);
+		var newPeer = new Peer(this, new Peer.PeerConnectionInfo(remoteStatic, presharedKey, null, Duration.ofSeconds(30)));
+		registerPeer(newPeer);
+
+		return newPeer;
 	}
 
 	public int transmit(SocketAddress address, ByteBuffer data) throws IOException {

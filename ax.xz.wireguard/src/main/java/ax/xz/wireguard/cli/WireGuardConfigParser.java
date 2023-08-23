@@ -155,7 +155,6 @@ public class WireGuardConfigParser {
 		String host = hostPort.substring(0, lastColonIndex);
 		String portStr = hostPort.substring(lastColonIndex + 1);
 
-		System.out.println();
 		int port;
 		try {
 			port = Integer.parseInt(portStr);

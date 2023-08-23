@@ -8,34 +8,15 @@ import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.VarHandle;
-import java.net.Inet4Address;
 import java.nio.ByteBuffer;
 
 import static ax.xz.raw.OSXSyscalls.*;
+import static java.lang.System.Logger.Level.DEBUG;
 import static java.lang.foreign.MemoryLayout.PathElement.groupElement;
 import static java.lang.foreign.ValueLayout.*;
 
 class OSXUtun implements Tun {
-	/**
-	 * struct sockaddr_in {
-	 * __uint8_t       sin_len;
-	 * sa_family_t     sin_family;
-	 * in_port_t       sin_port;
-	 * struct  in_addr sin_addr;
-	 * char            sin_zero[8];
-	 * };
-	 */
-	private static final MemoryLayout sockaddr_in = MemoryLayout.structLayout(
-			JAVA_BYTE.withName("sin_len"),
-			JAVA_BYTE.withName("sin_family"),
-			JAVA_SHORT.withName("sin_port"),
-			MemoryLayout.sequenceLayout(4, JAVA_BYTE).withName("sin_addr"),
-			MemoryLayout.sequenceLayout(8, JAVA_BYTE).withName("sin_zero")
-	);
-	private static final VarHandle sin_len$VH = sockaddr_in.varHandle(groupElement("sin_len"));
-	private static final VarHandle sin_family$VH = sockaddr_in.varHandle(groupElement("sin_family"));
-	private static final VarHandle sin_port$VH = sockaddr_in.varHandle(groupElement("sin_port"));
-	private static final MethodHandle sin_addr$VH = sockaddr_in.sliceHandle(groupElement("sin_addr"));
+	private static final System.Logger logger = System.getLogger(OSXUtun.class.getName());
 
 	/**
 	 * struct sockaddr_in6 {
@@ -55,12 +36,6 @@ class OSXUtun implements Tun {
 			MemoryLayout.sequenceLayout(16, JAVA_BYTE).withName("sin6_addr"),
 			JAVA_INT.withName("sin6_scope_id")
 	);
-	private static final VarHandle sin6_len$VH = sockaddr_in6.varHandle(groupElement("sin6_len"));
-	private static final VarHandle sin6_family$VH = sockaddr_in6.varHandle(groupElement("sin6_family"));
-	private static final VarHandle sin6_port$VH = sockaddr_in6.varHandle(groupElement("sin6_port"));
-	private static final VarHandle sin6_flowinfo$VH = sockaddr_in6.varHandle(groupElement("sin6_flowinfo"));
-	private static final MethodHandle sin6_addr$VH = sockaddr_in6.sliceHandle(groupElement("sin6_addr"));
-	private static final VarHandle sin6_scope_id$VH = sockaddr_in6.varHandle(groupElement("sin6_scope_id"));
 
 
 	/**
@@ -80,29 +55,6 @@ class OSXUtun implements Tun {
 			MemoryLayout.sequenceLayout(14, JAVA_BYTE).withName("sa_data")
 	);
 
-	/**
-	 * struct ifreq {
-	 * char ifr_name[16];
-	 * union {
-	 * struct sockaddr ifru_addr;
-	 * struct sockaddr ifru_dstaddr;
-	 * struct sockaddr ifru_broadaddr;
-	 * short ifru_flags;
-	 * int ifru_metric;
-	 * int ifru_mtu;
-	 * int ifru_phys;
-	 * int ifru_media;
-	 * int ifru_intval;
-	 * caddr_t ifru_data;
-	 * struct ifdevmtu ifru_devmtu;
-	 * struct ifkpi ifru_kpi;
-	 * u_int32_t ifru_wake_flags;
-	 * u_int32_t ifru_route_refcnt;
-	 * int ifru_cap[2];
-	 * u_int32_t ifru_functional_type;
-	 * # 325 "net/if.h"
-	 * } ifr_ifru;
-	 */
 	private static final MemoryLayout ifreq = MemoryLayout.structLayout(
 			MemoryLayout.sequenceLayout(16, C_CHAR).withName("ifr_name"),
 			MemoryLayout.unionLayout(
@@ -131,12 +83,8 @@ class OSXUtun implements Tun {
 	);
 	private static final MethodHandle ifr_name$VH = ifreq.sliceHandle(groupElement("ifr_name"));
 	private static final VarHandle mtu$VH = ifreq.varHandle(groupElement("ifr_ifru"), groupElement("ifru_mtu"));
-	private static final MethodHandle ifru_addr$VH = ifreq.sliceHandle(groupElement("ifr_ifru"), groupElement("ifru_addr"));
-	private static final MethodHandle ifru_addr6$VH = ifreq.sliceHandle(groupElement("ifr_ifru"), groupElement("ifru_addr6"));
-	private static final MethodHandle ifr6_prefixlen$VH = ifreq.sliceHandle(groupElement("ifr6_prefixlen"));
-	private static final MethodHandle ifr6_ifindex$VH = ifreq.sliceHandle(groupElement("ifr6_ifindex"));
 
-	private static final long SIOCSIFMTU = 0x80206934L, SIOCSIFADDR = 0x8020690cL, SIOCDIFADDR = 0x80206919L, SIOGIFINDEX = 0x8020691aL;
+	private static final long SIOCSIFMTU = 0x80206934L;
 
 	private final int fd, tunNumber;
 	private int mtu;
@@ -153,8 +101,7 @@ class OSXUtun implements Tun {
 			outBuffer = ByteBuffer.allocateDirect(buffer.remaining());
 			outBuffer.put(buffer);
 			outBuffer.flip();
-		}
-		else
+		} else
 			outBuffer = buffer;
 
 		OSXSyscalls.writev(fd, getPacketFamily(outBuffer), outBuffer);
@@ -169,7 +116,7 @@ class OSXUtun implements Tun {
 			inBuffer = buffer;
 
 		interface TempHolder {
-			ThreadLocal<ByteBuffer> PACKET_FAMILY = ThreadLocal.withInitial(() ->  ByteBuffer.allocateDirect(4));
+			ThreadLocal<ByteBuffer> PACKET_FAMILY = ThreadLocal.withInitial(() -> ByteBuffer.allocateDirect(4));
 		}
 		OSXSyscalls.readv(fd, TempHolder.PACKET_FAMILY.get().clear(), inBuffer);
 
@@ -248,49 +195,21 @@ class OSXUtun implements Tun {
 		}
 	}
 
-	private MemorySegment getAddressIoctl(Subnet subnet, Arena arena) throws Throwable {
-		MemorySegment addr;
-
-		if (subnet.address() instanceof Inet4Address) {
-			addr = arena.allocate(sockaddr_in);
-			sin_len$VH.set(addr, (byte) sockaddr_in.byteSize());
-			sin_family$VH.set(addr, (byte) AF_INET);
-			sin_port$VH.set(addr, (short) 0);
-			((MemorySegment) sin_addr$VH.invokeExact(addr)).copyFrom(MemorySegment.ofArray(subnet.address().getAddress()));
-		} else {
-			addr = arena.allocate(sockaddr_in6);
-			sin6_len$VH.set(addr, (byte) sockaddr_in6.byteSize());
-			sin6_family$VH.set(addr, (byte) AF_INET6);
-			sin6_port$VH.set(addr, (short) 0);
-			sin6_flowinfo$VH.set(addr, 0);
-			((MemorySegment) sin6_addr$VH.invokeExact(addr)).copyFrom(MemorySegment.ofArray(subnet.address().getAddress()));
-		}
-
-		var ifr = arena.allocate(ifreq);
-		((MemorySegment) ifr_name$VH.invokeExact(ifr)).setUtf8String(0, name());
-		((MemorySegment) ifru_addr$VH.invokeExact(ifr)).reinterpret(addr.byteSize()).copyFrom(addr);
-
-		return ifr;
-	}
-
-	public static String runCommand(String... command) throws IOException, InterruptedException {
+	public static void runCommand(String... command) throws IOException, InterruptedException {
 		var pb = new ProcessBuilder();
 		pb.command(command);
 
-		System.out.println("> " + String.join(" ", command));
+		logger.log(DEBUG, "> " + String.join(" ", command));
 
 		var process = pb.start();
 
 		if (process.waitFor() != 0) {
 			var result = new String(process.getInputStream().readAllBytes());
-			System.err.print(result);
-			System.err.flush();
-			throw new IOException();
+			throw new IOException("Command %s failed with exit code %d:  %s".formatted(String.join(" ", command), process.exitValue(), result));
 		}
-		var result = new String(process.getInputStream().readAllBytes());
 
-		System.out.print(result);
-		System.out.flush();
-		return result;
+		var result = new String(process.getInputStream().readAllBytes());
+		if (!result.isEmpty())
+			logger.log(DEBUG, result);
 	}
 }

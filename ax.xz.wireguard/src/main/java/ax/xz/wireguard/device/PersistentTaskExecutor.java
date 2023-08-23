@@ -21,12 +21,13 @@ public class PersistentTaskExecutor<E extends Exception> extends StructuredTaskS
 		}
 	}
 
+	@SuppressWarnings("unused")
 	private volatile Exception firstException;
 
-	private final Function<Exception, E> exceptionMapper;
+	private final Function<? super Exception, ? extends E> exceptionMapper;
 	private final Logger logger;
 
-	public PersistentTaskExecutor(String name, Function<Exception, E> exceptionMapper, Logger logger) {
+	public PersistentTaskExecutor(String name, Function<? super Exception, ? extends E> exceptionMapper, Logger logger) {
 		super(name, Thread.ofVirtual().factory());
 		this.exceptionMapper = exceptionMapper;
 		this.logger = logger;

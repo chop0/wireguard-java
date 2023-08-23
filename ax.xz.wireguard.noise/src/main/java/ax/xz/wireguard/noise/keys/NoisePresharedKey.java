@@ -17,4 +17,8 @@ public record NoisePresharedKey(byte[] data) {
 	public static NoisePresharedKey fromBase64(String base64) {
 		return new NoisePresharedKey(Base64.getDecoder().decode(base64));
 	}
+
+	public static NoisePresharedKey zero() {
+		return new NoisePresharedKey(new byte[LENGTH]);
+	}
 }
