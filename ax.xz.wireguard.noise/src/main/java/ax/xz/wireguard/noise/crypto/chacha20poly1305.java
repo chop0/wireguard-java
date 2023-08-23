@@ -1,18 +1,15 @@
 package ax.xz.wireguard.noise.crypto;
 
-import org.bouncycastle.jce.provider.BouncyCastleProvider;
-
 import javax.crypto.*;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.ByteBuffer;
-import java.security.*;
+import java.security.InvalidAlgorithmParameterException;
+import java.security.InvalidKeyException;
+import java.security.NoSuchAlgorithmException;
+import java.security.NoSuchProviderException;
 
 public class chacha20poly1305 {
-	static {
-		Security.addProvider(new BouncyCastleProvider());
-	}
-
 	public static final int KeySize = 32;
 	public static final int NonceSize = 12;
 	public static final int Overhead = 16;

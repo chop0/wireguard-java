@@ -5,6 +5,9 @@
       <root url="jar://$PROJECT_DIR$/lib/logback-classic-1.4.9.jar!/" />
     </CLASSES>
     <JAVADOC />
-    <SOURCES />
+    <SOURCES>
+      <root url="jar://$PROJECT_DIR$/../.ideaLibSources/logback-classic-1.4.9-sources.jar!/" />
+      <root url="jar://$PROJECT_DIR$/../.ideaLibSources/logback-core-1.4.9-sources.jar!/" />
+    </SOURCES>
   </library>
 </component>

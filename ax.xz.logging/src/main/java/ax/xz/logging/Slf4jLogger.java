@@ -1,18 +1,12 @@
 package ax.xz.logging;
 
-import jdk.internal.vm.ThreadContainers;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.slf4j.Marker;
-import org.slf4j.MarkerFactory;
 
 import java.text.MessageFormat;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.ResourceBundle;
 
 public class Slf4jLogger implements System.Logger {
-	private static final ThreadLocal<List<String>> scopeBacktrace = ThreadLocal.withInitial(Slf4jLogger::getThreadScopeBacktrace);
 	private final Logger delegate;
 
 	public Slf4jLogger(String name) {
@@ -34,10 +28,6 @@ public class Slf4jLogger implements System.Logger {
 		var builder = delegate.atLevel(translateLevel(level)).setCause(thrown)
 				.setMessage(msg);
 
-		for (var marker : scopeBacktrace.get()) {
-			builder = builder.addMarker(MarkerFactory.getMarker(marker));
-		}
-
 		builder.log();
 	}
 
@@ -45,34 +35,7 @@ public class Slf4jLogger implements System.Logger {
 	public void log(Level level, ResourceBundle bundle, String format, Object... params) {
 		var builder = delegate.atLevel(translateLevel(level)).setMessage(MessageFormat.format(format, params));
 
-		// build marker from scope backtrace
-		Marker marker = null;
-		for (var scope : scopeBacktrace.get()) {
-			if (marker == null) {
-				marker = MarkerFactory.getMarker(scope);
-			} else {
-				var inner = MarkerFactory.getMarker(scope);
-				marker.add(inner);
-				marker = inner;
-			}
-		}
-
-		builder = builder.addMarker(marker);
-
 		builder.log();
-	}
-
-	private static List<String> getThreadScopeBacktrace() {
-		var result = new ArrayList<String>();
-
-		var container = ThreadContainers.container(Thread.currentThread());
-		do {
-			if (container.owner() != null)
-				result.add(container.owner().getName());
-			container = container.parent();
-		} while (container != null && container != ThreadContainers.root());
-
-		return result.reversed();
 	}
 
 	private static org.slf4j.event.Level translateLevel(Level level) {

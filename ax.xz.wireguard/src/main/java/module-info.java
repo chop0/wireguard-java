@@ -4,5 +4,7 @@ module ax.xz.wireguard {
 	exports ax.xz.wireguard.cli;
 	exports ax.xz.wireguard.device;
 
+	exports ax.xz.wireguard.device.peer to ax.xz.logging;
+
 	requires ax.xz.wireguard.noise;
 }

@@ -12,7 +12,6 @@ import ax.xz.wireguard.noise.keys.NoisePublicKey;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
-import java.text.MessageFormat;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -20,7 +19,8 @@ import static java.lang.System.Logger;
 import static java.lang.System.Logger.Level.*;
 
 public class Peer {
-	// Logger
+	public static final ScopedValue<Peer> PEER = ScopedValue.newInstance();
+
 	private static final Logger logger = System.getLogger(Peer.class.getName());
 
 	// Instance variables
@@ -48,7 +48,14 @@ public class Peer {
 			throw new IllegalStateException("Peer already started");
 		}
 
-		executeWorkers();
+		try {
+			ScopedValue.callWhere(PEER, this, () -> {
+				executeWorkers();
+				return null;
+			});
+		} catch (Exception e) {
+			throw (IOException) e;
+		}
 	}
 
 	private void executeWorkers() throws IOException {
@@ -101,8 +108,7 @@ public class Peer {
 		if (session == null)
 			if (sessionManager.hasEndpoint()) {
 				return sessionManager.getEndpoint().getHostString();
-			}
-			else
+			} else
 				return "unknown";
 
 		return session.getOutboundPacketAddress().toString();

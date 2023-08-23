@@ -1,8 +1,9 @@
 <configuration>
+    <conversionRule conversionWord="sv" converterClass="ax.xz.logging.ScopedValueConverter" />
 
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <pattern>%d{HH:mm:ss.SSS} %marker %-5level %logger{36} -%kvp- %msg%n</pattern>
+            <pattern>%d{HH:mm:ss.SSS} %sv{ax.xz.wireguard.device.peer.Peer.PEER} %marker %-5level %logger{36} -%kvp- %msg%n</pattern>
         </encoder>
     </appender>
 

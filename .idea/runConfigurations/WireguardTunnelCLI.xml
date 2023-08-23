@@ -3,7 +3,7 @@
     <option name="MAIN_CLASS_NAME" value="ax.xz.wireguard.cli.WireguardTunnelCLI" />
     <module name="ax.xz.wireguard" />
     <option name="PROGRAM_PARAMETERS" value="ginkoid.conf" />
-    <option name="VM_PARAMETERS" value="--enable-preview" />
+    <option name="VM_PARAMETERS" value="--enable-preview --enable-native-access=ax.xz.raw.osx" />
     <extension name="coverage">
       <pattern>
         <option name="PATTERN" value="ax.xz.wireguard.cli.*" />

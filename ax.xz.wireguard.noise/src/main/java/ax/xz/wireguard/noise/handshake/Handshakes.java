@@ -6,7 +6,6 @@ import ax.xz.wireguard.noise.keys.NoisePublicKey;
 import ax.xz.wireguard.noise.crypto.chacha20poly1305;
 import static java.lang.System.Logger;
 import static java.lang.System.Logger.Level.*;
-import org.slf4j.LoggerFactory;
 
 import javax.crypto.BadPaddingException;
 import java.nio.ByteBuffer;
