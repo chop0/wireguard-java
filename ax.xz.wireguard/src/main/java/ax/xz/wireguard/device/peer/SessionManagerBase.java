@@ -3,8 +3,6 @@ package ax.xz.wireguard.device.peer;
 import ax.xz.wireguard.device.PersistentTaskExecutor;
 import ax.xz.wireguard.device.WireguardDevice;
 
-import javax.annotation.Nullable;
-import javax.annotation.concurrent.GuardedBy;
 import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
@@ -17,7 +15,7 @@ import static java.lang.System.Logger.Level.*;
 /**
  * A skeleton of a SessionManager that handles the session state and concurrency.
  */
-abstract class SessionManagerBase {
+abstract sealed class SessionManagerBase permits SessionManager {
 	private static final System.Logger logger = System.getLogger(SessionManagerBase.class.getName());
 
 	// The lock behind which all peer state is stored
@@ -28,9 +26,6 @@ abstract class SessionManagerBase {
 
 	private final WireguardDevice device;
 	private final Peer.PeerConnectionInfo connectionInfo;
-
-	// The current session.  Null iff no session is established and a handshake has not begun. This is protected by peerLock.
-	private EstablishedSession session;
 
 	protected SessionManagerBase(WireguardDevice device, Peer.PeerConnectionInfo connectionInfo) {
 		this.connectionInfo = connectionInfo;
@@ -84,11 +79,7 @@ abstract class SessionManagerBase {
 		try {
 			while (!Thread.interrupted()) {
 				attemptSessionRecoveryIfRequired();
-
-				if (session == null)
-					condition.await();
-				else
-					condition.await(Duration.between(Instant.now(), session.expiration()).toMillis(), TimeUnit.MILLISECONDS);
+				condition.await(Duration.between(Instant.now(), currentSessionExpiration()).toMillis(), TimeUnit.MILLISECONDS);
 			}
 		} catch (InterruptedException e) {
 			logger.log(DEBUG, "Session initiation thread interrupted");
@@ -102,11 +93,7 @@ abstract class SessionManagerBase {
 		try {
 			while (!Thread.interrupted()) {
 				sendKeepaliveIfNeeded();
-
-				if (session == null)
-					condition.await();
-				else
-					condition.await(session.keepaliveInterval().toMillis(), TimeUnit.MILLISECONDS);
+				condition.await(keepaliveInterval().toMillis(), TimeUnit.MILLISECONDS);
 			}
 		} catch (InterruptedException e) {
 			logger.log(DEBUG, "Keepalive worker interrupted");
@@ -131,34 +118,9 @@ abstract class SessionManagerBase {
 		}
 	}
 
-	/**
-	 * Sets the session. Requires that the peerLock be held.
-	 */
-	protected void setSession(@Nullable EstablishedSession session) {
-		lock.lock();
+	protected abstract Instant currentSessionExpiration();
 
-		try {
-			if (this.session != null)
-				device.clearSessionIndex(this.session.localIndex());
-
-			this.session = session;
-
-			if (session != null)
-				device.setPeerSessionIndex(connectionInfo.remoteStatic(), session.localIndex());
-
-			condition.signalAll();
-		} finally {
-			lock.unlock();
-		}
-	}
-
-
-	/**
-	 * Returns the current session, or null if no session is established.
-	 */
-	protected EstablishedSession tryGetSessionNow() {
-		return session;
-	}
+	protected abstract Duration keepaliveInterval();
 
 	/**
 	 * Waits till a handshake initiation message has arrived, and then processes it.
@@ -176,7 +138,6 @@ abstract class SessionManagerBase {
 	 *
 	 * @throws InterruptedException if the thread is interrupted whilst performing the handshake
 	 */
-	@GuardedBy("lock")
 	protected abstract void attemptSessionRecoveryIfRequired() throws InterruptedException;
 
 	/**

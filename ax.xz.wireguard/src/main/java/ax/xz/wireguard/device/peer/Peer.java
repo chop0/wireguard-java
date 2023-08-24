@@ -80,10 +80,7 @@ public class Peer {
 	public String getAuthority() {
 		var session = sessionManager.tryGetSessionNow();
 		if (session == null)
-			if (connectionInfo.endpoint != null) {
-				return connectionInfo.endpoint.getHostString();
-			} else
-				return "unknown";
+			return "unknown";
 
 		return session.getOutboundPacketAddress().toString();
 	}

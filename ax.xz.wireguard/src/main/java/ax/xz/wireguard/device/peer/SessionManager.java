@@ -5,9 +5,12 @@ import ax.xz.wireguard.device.message.MessageInitiation;
 import ax.xz.wireguard.device.message.MessageResponse;
 import ax.xz.wireguard.device.message.MessageTransport;
 
+import javax.annotation.Nullable;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -19,7 +22,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import static java.lang.System.Logger;
 import static java.lang.System.Logger.Level.*;
 
-class SessionManager extends SessionManagerBase {
+final class SessionManager extends SessionManagerBase {
 	private static final int HANDSHAKE_ATTEMPTS = 5;
 
 	private static final Logger logger = System.getLogger(SessionManager.class.getName());
@@ -42,6 +45,9 @@ class SessionManager extends SessionManagerBase {
 	// The device through which we communicate with the peer
 	private final WireguardDevice device;
 
+	// The current session.  Null iff no session is established and a handshake has not begun. This is protected by peerLock.
+	private EstablishedSession session;
+
 
 	SessionManager(WireguardDevice device, Peer.PeerConnectionInfo connectionInfo) {
 		super(device, connectionInfo);
@@ -49,7 +55,27 @@ class SessionManager extends SessionManagerBase {
 		this.device = device;
 	}
 
+	@Override
+	protected Instant currentSessionExpiration() {
+		var session = tryGetSessionNow();
+		if (session == null)
+			return Instant.MAX;
+		else
+			return session.expiration();
+	}
+
+	@Override
+	protected Duration keepaliveInterval() {
+		var session = tryGetSessionNow();
+		if (session == null)
+			return Duration.ofMillis(Long.MAX_VALUE);
+		else
+			return session.keepaliveInterval();
+	}
+
 	private final ReentrantLock initiationLock = new ReentrantLock(); // so we dont have multiple handshake responses at once
+
+	@Override
 	protected void attemptSessionRecoveryIfRequired() throws InterruptedException {
 		initiationLock.lock();
 
@@ -90,6 +116,7 @@ class SessionManager extends SessionManagerBase {
 		}
 	}
 
+	@Override
 	protected void processHandshakeInitiationMessage() throws InterruptedException {
 		var message = inboundHandshakeInitiationQueue.take();
 		var initiation = message.getKey();
@@ -109,6 +136,7 @@ class SessionManager extends SessionManagerBase {
 		processMessages(awaitInboundMessages());
 	}
 
+	@Override
 	protected void sendKeepaliveIfNeeded() {
 		var session = tryGetSessionNow();
 		if (session != null && session.needsKeepalive()) {
@@ -121,7 +149,6 @@ class SessionManager extends SessionManagerBase {
 			}
 		}
 	}
-
 
 	/**
 	 * Enqueues an inbound handshake response message to be processed
@@ -228,6 +255,35 @@ class SessionManager extends SessionManagerBase {
 		}
 
 		return false;
+	}
+
+	/**
+	 * Sets the session. Requires that the peerLock be held.
+	 */
+	private void setSession(@Nullable EstablishedSession session) {
+		lock.lock();
+
+		try {
+			if (this.session != null)
+				device.clearSessionIndex(this.session.localIndex());
+
+			this.session = session;
+
+			if (session != null)
+				device.setPeerSessionIndex(connectionInfo.remoteStatic(), session.localIndex());
+
+			condition.signalAll();
+		} finally {
+			lock.unlock();
+		}
+	}
+
+
+	/**
+	 * Returns the current session, or null if no session is established.
+	 */
+	@Nullable EstablishedSession tryGetSessionNow() {
+		return session;
 	}
 
 	/**
