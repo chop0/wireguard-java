@@ -8,11 +8,11 @@ import javax.crypto.BadPaddingException;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.locks.ReentrantLock;
 
 final class EstablishedSession {
-	private final WireguardDevice device;
 	private final SymmetricKeypair keypair;
 
 	private final int localIndex;
@@ -20,15 +20,18 @@ final class EstablishedSession {
 
 	private final InetSocketAddress outboundPacketAddress;
 
+	private final Duration keepaliveInterval;
+	private Instant lastKeepalive;
+
 	private final Instant expiration = Instant.now().plusSeconds(120);
 
-	public EstablishedSession(WireguardDevice device, SymmetricKeypair keypair, InetSocketAddress outboundPacketAddress, int localIndex, int remoteIndex) {
-		this.device = device;
+	public EstablishedSession(SymmetricKeypair keypair, InetSocketAddress outboundPacketAddress, int localIndex, int remoteIndex, Duration keepaliveInterval) {
 		this.keypair = keypair;
 		this.outboundPacketAddress = outboundPacketAddress;
 
 		this.localIndex = localIndex;
 		this.remoteIndex = remoteIndex;
+		this.keepaliveInterval = keepaliveInterval;
 	}
 
 	private final ReentrantLock cipherLock = new ReentrantLock();
@@ -46,9 +49,13 @@ final class EstablishedSession {
 		}
 	}
 
-	public int writeTransportPacket(ByteBuffer data) throws IOException {
-		var packet = createTransportPacket(data);
-		return device.transmit(outboundPacketAddress, packet.buffer());
+	public int sendTransportPacket(WireguardDevice device, ByteBuffer data) throws IOException {
+		return device.transmit(outboundPacketAddress, createTransportPacket(data).buffer());
+	}
+
+	public void sendKeepalive(WireguardDevice device) throws IOException {
+		sendTransportPacket(device, ByteBuffer.allocate(0));
+		markKeepaliveSent();
 	}
 
 	public void decryptTransportPacket(MessageTransport message, ByteBuffer dst) throws BadPaddingException {
@@ -88,5 +95,23 @@ final class EstablishedSession {
 
 	public boolean isExpired() {
 		return Instant.now().isAfter(expiration);
+	}
+
+	/**
+	 * @return true if a keepalive packet should be sent
+	 */
+	public boolean needsKeepalive() {
+		return lastKeepalive == null || lastKeepalive.plus(keepaliveInterval).isBefore(Instant.now());
+	}
+
+	/**
+	 * To be called after a keepalive packet is sent
+	 */
+	public void markKeepaliveSent() {
+		lastKeepalive = Instant.now();
+	}
+
+	public Duration keepaliveInterval() {
+		return keepaliveInterval;
 	}
 }

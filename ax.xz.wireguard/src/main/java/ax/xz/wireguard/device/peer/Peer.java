@@ -29,11 +29,13 @@ public class Peer {
 	private final PeerConnectionInfo connectionInfo;
 
 	private final SessionManager sessionManager;
+	private final WireguardDevice device;
 
 	private final AtomicBoolean started = new AtomicBoolean(false);
 
 	public Peer(WireguardDevice device, PeerConnectionInfo connectionInfo) {
 		this.connectionInfo = connectionInfo;
+		this.device = device;
 
 		this.sessionManager = new SessionManager(device, connectionInfo);
 		logger.log(DEBUG, "Created peer {0}", this);
@@ -44,7 +46,7 @@ public class Peer {
 			throw new IllegalStateException("Peer already started");
 		}
 
-		ScopedValue.runWhere(PEER, this, sessionManager);
+		ScopedValue.runWhere(PEER, this, sessionManager::run);
 	}
 
 	/**
@@ -65,7 +67,7 @@ public class Peer {
 		switch (message) {
 			case MessageTransport transport -> sessionManager.receiveTransport(transport);
 			case MessageInitiation initiation -> sessionManager.receiveInitiation(address, initiation);
-			case MessageResponse response -> sessionManager.receiveHandshakeResponse(address, response);
+			case MessageResponse response -> sessionManager.receiveHandshakeResponse(response);
 			default -> logger.log(WARNING, "Received unexpected message type: {0}", message);
 		}
 	}
@@ -96,7 +98,7 @@ public class Peer {
 		if (session == null)
 			throw new IOException("No session established");
 
-		return session.writeTransportPacket(data);
+		return session.sendTransportPacket(device, data);
 	}
 
 	record TransportWithSession(MessageTransport transport, EstablishedSession session) {
