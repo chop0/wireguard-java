@@ -90,13 +90,15 @@ public class Peer {
 
 	/**
 	 * Sends the given transport data to the peer.
+	 *
 	 * @param data data to send
 	 * @throws IOException if no session is established or something is wrong with the socket
 	 */
 	public int writeTransportPacket(ByteBuffer data) throws IOException {
 		var session = sessionManager.tryGetSessionNow();
-		if (session == null)
-			throw new IOException("No session established");
+		if (session == null) {
+			return 0; // drop
+		}
 
 		return session.sendTransportPacket(device, data);
 	}
@@ -104,7 +106,8 @@ public class Peer {
 	record TransportWithSession(MessageTransport transport, EstablishedSession session) {
 	}
 
-	public record PeerConnectionInfo(NoisePublicKey remoteStatic, @Nullable NoisePresharedKey presharedKey, @Nullable InetSocketAddress endpoint, Duration keepaliveInterval) {
+	public record PeerConnectionInfo(NoisePublicKey remoteStatic, @Nullable NoisePresharedKey presharedKey,
+									 @Nullable InetSocketAddress endpoint, Duration keepaliveInterval) {
 		public PeerConnectionInfo {
 			requireNonNull(remoteStatic);
 			requireNonNull(keepaliveInterval);
