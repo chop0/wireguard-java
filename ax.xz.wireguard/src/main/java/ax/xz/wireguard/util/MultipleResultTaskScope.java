@@ -1,4 +1,4 @@
-package ax.xz.wireguard;
+package ax.xz.wireguard.util;
 
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;

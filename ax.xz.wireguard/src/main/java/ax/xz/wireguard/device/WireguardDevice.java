@@ -1,6 +1,6 @@
 package ax.xz.wireguard.device;
 
-import ax.xz.wireguard.MultipleResultTaskScope;
+import ax.xz.wireguard.util.MultipleResultTaskScope;
 import ax.xz.wireguard.device.message.Message;
 import ax.xz.wireguard.device.message.MessageInitiation;
 import ax.xz.wireguard.device.message.MessageResponse;
@@ -10,6 +10,7 @@ import ax.xz.wireguard.noise.handshake.Handshakes;
 import ax.xz.wireguard.noise.keys.NoisePresharedKey;
 import ax.xz.wireguard.noise.keys.NoisePrivateKey;
 import ax.xz.wireguard.noise.keys.NoisePublicKey;
+import ax.xz.wireguard.util.PersistentTaskExecutor;
 
 import javax.crypto.BadPaddingException;
 import java.io.Closeable;

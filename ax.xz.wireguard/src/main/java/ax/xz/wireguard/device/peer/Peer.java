@@ -1,5 +1,6 @@
 package ax.xz.wireguard.device.peer;
 
+import ax.xz.wireguard.util.PersistentTaskExecutor;
 import ax.xz.wireguard.device.WireguardDevice;
 import ax.xz.wireguard.device.message.Message;
 import ax.xz.wireguard.device.message.MessageInitiation;
@@ -13,7 +14,11 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
 
 import static java.lang.System.Logger;
 import static java.lang.System.Logger.Level.DEBUG;
@@ -25,7 +30,13 @@ public class Peer {
 
 	private static final Logger logger = System.getLogger(Peer.class.getName());
 
-	// Instance variables
+
+	// a queue of inbound transport messages
+	private final LinkedBlockingQueue<TransportWithSession> inboundTransportQueue = new LinkedBlockingQueue<>();
+
+	// a queue of transport messages that have been decrypted
+	private final LinkedBlockingQueue<ByteBuffer> decryptedTransportQueue = new LinkedBlockingQueue<>();
+
 	private final PeerConnectionInfo connectionInfo;
 
 	private final SessionManager sessionManager;
@@ -46,7 +57,18 @@ public class Peer {
 			throw new IllegalStateException("Peer already started");
 		}
 
-		ScopedValue.runWhere(PEER, this, sessionManager::run);
+		ScopedValue.runWhere(PEER, this, () -> {
+			try (var sts = new PersistentTaskExecutor<>("Peer executor", Function.identity(), logger)) {
+				sts.submit("Session manager", sessionManager::run);
+				sts.submit("Decryption worker", this::decryptionWorker);
+
+				sts.join();
+			} catch (InterruptedException e) {
+				logger.log(DEBUG, "Peer interrupted");
+			} finally {
+				logger.log(DEBUG, "Peer shutting down");
+			}
+		});
 	}
 
 	/**
@@ -56,7 +78,7 @@ public class Peer {
 	 * @throws InterruptedException if the thread is interrupted whilst waiting
 	 */
 	public ByteBuffer readTransportPacket() throws InterruptedException {
-		return sessionManager.receiveDecryptedTransport();
+		return receiveDecryptedTransport();
 	}
 
 	public NoisePublicKey getRemoteStatic() {
@@ -65,11 +87,105 @@ public class Peer {
 
 	public void receiveInboundMessage(InetSocketAddress address, Message message) {
 		switch (message) {
-			case MessageTransport transport -> sessionManager.receiveTransport(transport);
+			case MessageTransport transport -> receiveTransport(transport);
 			case MessageInitiation initiation -> sessionManager.receiveInitiation(address, initiation);
 			case MessageResponse response -> sessionManager.receiveHandshakeResponse(response);
 			default -> logger.log(WARNING, "Received unexpected message type: {0}", message);
 		}
+	}
+
+	private void decryptionWorker() throws InterruptedException {
+		while (!Thread.interrupted()) {
+			processMessages(awaitInboundMessages());
+		}
+	}
+
+	/**
+	 * Enqueues an inbound transport message to be processed
+	 *
+	 * @param transport the transport message to enqueue
+	 */
+	void receiveTransport(MessageTransport transport) {
+		// no use waiting for a session, since if the session is not established, we will not be able to decrypt the message
+		// because any sessions created in the future will have a different keypair
+		var currentSession = sessionManager.tryGetSessionNow();
+		if (currentSession == null)
+			return;
+
+		inboundTransportQueue.add(new Peer.TransportWithSession(transport, currentSession));
+	}
+
+	/**
+	 * Removes a decrypted transport message from the queue, and waits if none is present
+	 *
+	 * @return decrypted transport packet received
+	 * @throws InterruptedException if the thread is interrupted whilst waiting
+	 */
+	ByteBuffer receiveDecryptedTransport() throws InterruptedException {
+		return decryptedTransportQueue.take();
+	}
+
+	/**
+	 * Waits till at least one transport message is present in the queue.  When a message is present, drains the queue and returns a list
+	 * of its prior contents.
+	 *
+	 * @return A list containing all messages received since the last call
+	 * @throws InterruptedException if the thread is interrupted whilst waiting
+	 */
+	private ArrayList<TransportWithSession> awaitInboundMessages() throws InterruptedException {
+		var messages = new ArrayList<Peer.TransportWithSession>(inboundTransportQueue.size());
+		messages.add(inboundTransportQueue.take());
+		inboundTransportQueue.drainTo(messages);
+		return messages;
+	}
+
+	/**
+	 * Decrypts all transport messages in the given list and puts them in the appropriate queue
+	 *
+	 * @param messages the messages to decrypt
+	 * @throws InterruptedException if the thread is interrupted whilst waiting
+	 */
+	private void processMessages(ArrayList<Peer.TransportWithSession> messages) throws InterruptedException {
+		try (var sts = new StructuredTaskScope.ShutdownOnFailure()) {
+			for (var m : messages) {
+				sts.fork(() -> decryptAndEnqueue(m));
+			}
+
+			sts.join();
+		}
+	}
+
+	/**
+	 * Decrypts a transport message and enqueues it for reading
+	 *
+	 * @param inb the transport message to decrypt
+	 * @return true if the message was successfully decrypted, false otherwise
+	 */
+	private boolean decryptAndEnqueue(Peer.TransportWithSession inb) {
+		try {
+			if (inb.session() == null)
+				return false;
+
+			if (inb.transport().content().remaining() < 16) {
+				logger.log(WARNING, "Received transport message with invalid length");
+				return false;
+			}
+
+			var result = ByteBuffer.allocate(inb.transport().content().remaining() - 16);
+			inb.session().decryptTransportPacket(inb.transport(), result);
+			result.flip();
+
+			if (result.remaining() == 0) {
+				logger.log(DEBUG, "Received keepalive");
+			} else
+				decryptedTransportQueue.add(result);
+
+			return true;
+		} catch (Throwable e) {
+			logger.log(WARNING, "Error decrypting transport message (is the Device MTU big enough?)", e);
+		}
+
+		return false;
 	}
 
 	@Override

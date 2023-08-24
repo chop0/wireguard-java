@@ -1,11 +1,11 @@
 package ax.xz.wireguard.device;
 
 import ax.xz.raw.spi.RawSocket;
+import ax.xz.wireguard.util.PersistentTaskExecutor;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 
 import static java.lang.System.Logger;

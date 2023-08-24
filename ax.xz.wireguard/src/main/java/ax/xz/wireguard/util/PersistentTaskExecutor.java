@@ -1,4 +1,4 @@
-package ax.xz.wireguard.device;
+package ax.xz.wireguard.util;
 
 import static java.lang.System.Logger;
 import static java.lang.System.Logger.Level.*;

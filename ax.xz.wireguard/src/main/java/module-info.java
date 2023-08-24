@@ -5,6 +5,7 @@ module ax.xz.wireguard {
 	exports ax.xz.wireguard.device;
 
 	opens ax.xz.wireguard.device.peer to ax.xz.logging;
+	exports ax.xz.wireguard.util;
 
 	requires ax.xz.wireguard.noise;
 	requires jsr305;

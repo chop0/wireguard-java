@@ -3,41 +3,39 @@ package ax.xz.wireguard.device.peer;
 import ax.xz.wireguard.device.WireguardDevice;
 import ax.xz.wireguard.device.message.MessageInitiation;
 import ax.xz.wireguard.device.message.MessageResponse;
-import ax.xz.wireguard.device.message.MessageTransport;
+import ax.xz.wireguard.util.PersistentTaskExecutor;
+import ax.xz.wireguard.util.RelinquishingQueue;
 
 import javax.annotation.Nullable;
+import javax.annotation.concurrent.GuardedBy;
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Map;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
 import static java.lang.System.Logger;
 import static java.lang.System.Logger.Level.*;
 
-final class SessionManager extends SessionManagerBase {
+final class SessionManager {
 	private static final int HANDSHAKE_ATTEMPTS = 5;
 
 	private static final Logger logger = System.getLogger(SessionManager.class.getName());
+	// The lock behind which all peer state is stored
+
+	private final ReentrantLock lock = new ReentrantLock();
+	// The condition that is signalled when the peer state is modified
+	private final Condition sessionCondition = lock.newCondition();
 
 	// A queue of inbound handshake response messages
-	private final LinkedBlockingQueue<MessageResponse> inboundHandshakeResponseQueue = new LinkedBlockingQueue<>();
+	private final RelinquishingQueue<MessageResponse> inboundHandshakeResponseQueue = new RelinquishingQueue<>(lock);
 
 	// A queue of inbound handshake initiation messages
-	private final LinkedBlockingQueue<Map.Entry<MessageInitiation, InetSocketAddress>> inboundHandshakeInitiationQueue = new LinkedBlockingQueue<>();
-
-	// a queue of inbound transport messages
-	private final LinkedBlockingQueue<Peer.TransportWithSession> inboundTransportQueue = new LinkedBlockingQueue<>();
-
-	// a queue of transport messages that have been decrypted
-	private final LinkedBlockingQueue<ByteBuffer> decryptedTransportQueue = new LinkedBlockingQueue<>();
+	private final RelinquishingQueue<Map.Entry<MessageInitiation, InetSocketAddress>> inboundHandshakeInitiationQueue = new RelinquishingQueue<>(lock);
 
 	// The keys and addresses used to connect to the peer
 	private final Peer.PeerConnectionInfo connectionInfo;
@@ -45,104 +43,139 @@ final class SessionManager extends SessionManagerBase {
 	// The device through which we communicate with the peer
 	private final WireguardDevice device;
 
-	// The current session.  Null iff no session is established and a handshake has not begun. This is protected by peerLock.
+	// The current session.  Null iff no session is established and a handshake has not begun. This is private by peerLock.
 	private EstablishedSession session;
 
 
 	SessionManager(WireguardDevice device, Peer.PeerConnectionInfo connectionInfo) {
-		super(device, connectionInfo);
 		this.connectionInfo = connectionInfo;
 		this.device = device;
 	}
 
-	@Override
-	protected Instant currentSessionExpiration() {
-		var session = tryGetSessionNow();
-		if (session == null)
-			return Instant.MAX;
-		else
-			return session.expiration();
+	public void run() {
+		try (var executor = new PersistentTaskExecutor<>("Session workers", IOException::new, logger)) {
+			executor.submit("Session initiation thread", this::sessionInitiationThread);
+			executor.submit("Handshake responder thread", this::handshakeResponderThread);
+			executor.submit("Keepalive thread", this::keepaliveThread);
+
+			executor.join();
+		} catch (InterruptedException e) {
+			logger.log(DEBUG, "Broken connection worker interrupted");
+		} catch (Throwable e) {
+			logger.log(WARNING, "Unhandled error in broken connection worker", e);
+			throw e;
+		} finally {
+			logger.log(DEBUG, "Broken connection worker shutting down");
+			cleanup();
+		}
 	}
 
-	@Override
-	protected Duration keepaliveInterval() {
-		var session = tryGetSessionNow();
-		if (session == null)
-			return Duration.ofMillis(Long.MAX_VALUE);
-		else
-			return session.keepaliveInterval();
-	}
-
-	private final ReentrantLock initiationLock = new ReentrantLock(); // so we dont have multiple handshake responses at once
-
-	@Override
-	protected void attemptSessionRecoveryIfRequired() throws InterruptedException {
-		initiationLock.lock();
+	private void sessionInitiationThread() {
+		lock.lock();
 
 		try {
-			var oldSession = tryGetSessionNow();
-			if (!(oldSession == null || oldSession.isExpired())) {
-				return;
+			while (!Thread.interrupted()) {
+				attemptSessionRecoveryIfRequired();
+				if (session == null)
+					sessionCondition.await();
+				else
+					sessionCondition.await(Duration.between(Instant.now(), session.expiration()).toMillis(), TimeUnit.MILLISECONDS);
 			}
+		} catch (InterruptedException e) {
+			logger.log(DEBUG, "Session initiation thread interrupted");
+		} finally {
+			lock.unlock();
+		}
+	}
 
-			if (connectionInfo.endpoint() == null) {
-				logger.log(WARNING, "No endpoint set;  waiting for remote handshake initiation");
-				return;
+	private void keepaliveThread() {
+		lock.lock();
+
+		try {
+			while (!Thread.interrupted()) {
+				sendKeepaliveIfNeeded();
+
+				if (session == null)
+					sessionCondition.await();
+				else
+					sessionCondition.await(session.keepaliveInterval().toMillis(), TimeUnit.MILLISECONDS);
 			}
+		} catch (InterruptedException e) {
+			logger.log(DEBUG, "Keepalive worker interrupted");
+		} catch (Throwable e) {
+			logger.log(ERROR, "Keepalive worker failed", e);
+			throw e;
+		} finally {
+			lock.unlock();
+			logger.log(DEBUG, "Keepalive worker shutting down");
+		}
+	}
 
-			for (int i = 0; i < HANDSHAKE_ATTEMPTS; i++) {
-				logger.log(INFO, "Initiating handshake (try {0} of {1})", i + 1, HANDSHAKE_ATTEMPTS);
+	private void handshakeResponderThread() {
+		lock.lock();
 
+		try {
+			while (!Thread.interrupted()) {
 				try {
-					var initiator = HandshakeInitiator.initiate(device, connectionInfo, getNewSessionIndex());
+					var message = inboundHandshakeInitiationQueue.take();
+					var initiation = message.getKey();
+					var origin = message.getValue();
 
-					var response = inboundHandshakeResponseQueue.poll(5, TimeUnit.SECONDS);
-					if (response == null) {
-						logger.log(WARNING, "Handshake response timed out");
-						continue;
-					}
-
-					initiator.consumeResponse(response);
-					setSession(initiator.getSession());
-
-					logger.log(INFO, "Completed handshake (initiator)");
-					break;
+					setSession(HandshakeResponder.respond(device, initiation, connectionInfo.keepaliveInterval(), origin, getNewSessionIndex()));
+					logger.log(INFO, "Completed handshake (responder)");
 				} catch (IOException e) {
-					logger.log(WARNING, "Handshake failed", e);
+					logger.log(WARNING, "Failed to complete handshake (responder)", e);
+					killSession();
 				}
 			}
+		} catch (InterruptedException e) {
+			logger.log(DEBUG, "Handshake responder interrupted");
 		} finally {
-			initiationLock.unlock();
+			lock.unlock();
+			logger.log(DEBUG, "Handshake responder shutting down");
 		}
 	}
 
-	@Override
-	protected void processHandshakeInitiationMessage() throws InterruptedException {
-		var message = inboundHandshakeInitiationQueue.take();
-		var initiation = message.getKey();
-		var origin = message.getValue();
+	@GuardedBy("lock")
+	private void attemptSessionRecoveryIfRequired() throws InterruptedException {
+		var oldSession = tryGetSessionNow();
+		if (!(oldSession == null || oldSession.isExpired())) {
+			return;
+		}
 
-		try {
-			setSession(HandshakeResponder.respond(device, initiation, connectionInfo.keepaliveInterval(), origin, getNewSessionIndex()));
-			logger.log(INFO, "Completed handshake (responder)");
-		} catch (IOException e) {
-			logger.log(WARNING, "Failed to complete handshake (responder)", e);
-			killSession();
+		if (connectionInfo.endpoint() == null) {
+			logger.log(WARNING, "No endpoint set;  waiting for remote handshake initiation");
+			return;
+		}
+
+		for (int i = 0; i < HANDSHAKE_ATTEMPTS; i++) {
+			logger.log(INFO, "Initiating handshake (try {0} of {1})", i + 1, HANDSHAKE_ATTEMPTS);
+
+			try {
+				var initiator = HandshakeInitiator.initiate(device, connectionInfo, getNewSessionIndex());
+
+				var response = inboundHandshakeResponseQueue.poll(Duration.ofSeconds(5));
+				if (response == null) {
+					logger.log(WARNING, "Handshake response timed out");
+					continue;
+				}
+
+				initiator.consumeResponse(response);
+				setSession(initiator.getSession());
+
+				logger.log(INFO, "Completed handshake (initiator)");
+				break;
+			} catch (IOException e) {
+				logger.log(WARNING, "Handshake failed", e);
+			}
 		}
 	}
 
-	@Override
-	protected void processTransportMessages() throws InterruptedException {
-		processMessages(awaitInboundMessages());
-	}
-
-	@Override
-	protected void sendKeepaliveIfNeeded() {
-		var session = tryGetSessionNow();
+	@GuardedBy("lock")
+	private void sendKeepaliveIfNeeded() {
 		if (session != null && session.needsKeepalive()) {
 			try {
 				session.sendKeepalive(device);
-
 				logger.log(DEBUG, "Sent keepalive");
 			} catch (IOException e) {
 				logger.log(WARNING, "Keepalive failed", e);
@@ -156,7 +189,13 @@ final class SessionManager extends SessionManagerBase {
 	 * @param message the message to enqueue
 	 */
 	void receiveHandshakeResponse(MessageResponse message) {
-		inboundHandshakeResponseQueue.add(message);
+		lock.lock();
+
+		try {
+			inboundHandshakeResponseQueue.offer(message);
+		} finally {
+			lock.unlock();
+		}
 	}
 
 	/**
@@ -166,129 +205,44 @@ final class SessionManager extends SessionManagerBase {
 	 * @param messageInitiationInboundMessage the message to enqueue
 	 */
 	void receiveInitiation(InetSocketAddress address, MessageInitiation messageInitiationInboundMessage) {
-		inboundHandshakeInitiationQueue.add(Map.entry(messageInitiationInboundMessage, address));
-	}
+		lock.lock();
 
-	/**
-	 * Enqueues an inbound transport message to be processed
-	 *
-	 * @param transport the transport message to enqueue
-	 */
-	void receiveTransport(MessageTransport transport) {
-		// no use waiting for a session, since if the session is not established, we will not be able to decrypt the message
-		// because any sessions created in the future will have a different keypair
-		var currentSession = tryGetSessionNow();
-		if (currentSession == null)
-			return;
-
-		inboundTransportQueue.add(new Peer.TransportWithSession(transport, currentSession));
-	}
-
-	/**
-	 * Removes a decrypted transport message from the queue, and waits if none is present
-	 *
-	 * @return decrypted transport packet received
-	 * @throws InterruptedException if the thread is interrupted whilst waiting
-	 */
-	ByteBuffer receiveDecryptedTransport() throws InterruptedException {
-		return decryptedTransportQueue.take();
-	}
-
-	/**
-	 * Waits till at least one transport message is present in the queue.  When a message is present, drains the queue and returns a list
-	 * of its prior contents.
-	 *
-	 * @return A list containing all messages received since the last call
-	 * @throws InterruptedException if the thread is interrupted whilst waiting
-	 */
-	private ArrayList<Peer.TransportWithSession> awaitInboundMessages() throws InterruptedException {
-		var messages = new ArrayList<Peer.TransportWithSession>(inboundTransportQueue.size());
-		messages.add(inboundTransportQueue.take());
-		inboundTransportQueue.drainTo(messages);
-		return messages;
-	}
-
-	/**
-	 * Decrypts all transport messages in the given list and puts them in the appropriate queue
-	 *
-	 * @param messages the messages to decrypt
-	 * @throws InterruptedException if the thread is interrupted whilst waiting
-	 */
-	private void processMessages(ArrayList<Peer.TransportWithSession> messages) throws InterruptedException {
-		try (var sts = new StructuredTaskScope.ShutdownOnFailure()) {
-			for (var m : messages) {
-				sts.fork(() -> decryptAndEnqueue(m));
-			}
-
-			sts.join();
-		}
-	}
-
-	/**
-	 * Decrypts a transport message and enqueues it for reading
-	 *
-	 * @param inb the transport message to decrypt
-	 * @return true if the message was successfully decrypted, false otherwise
-	 */
-	private boolean decryptAndEnqueue(Peer.TransportWithSession inb) {
 		try {
-			if (inb.session() == null)
-				return false;
-
-			if (inb.transport().content().remaining() < 16) {
-				logger.log(WARNING, "Received transport message with invalid length");
-				return false;
-			}
-
-			var result = ByteBuffer.allocate(inb.transport().content().remaining() - 16);
-			inb.session().decryptTransportPacket(inb.transport(), result);
-			result.flip();
-
-			if (result.remaining() == 0) {
-				logger.log(DEBUG, "Received keepalive");
-			} else
-				decryptedTransportQueue.add(result);
-
-			return true;
-		} catch (Throwable e) {
-			logger.log(WARNING, "Error decrypting transport message (is the Device MTU big enough?)", e);
+			inboundHandshakeInitiationQueue.offer(Map.entry(messageInitiationInboundMessage, address));
+		} finally {
+			lock.unlock();
 		}
-
-		return false;
 	}
 
 	/**
 	 * Sets the session. Requires that the peerLock be held.
 	 */
+	@GuardedBy("lock")
 	private void setSession(@Nullable EstablishedSession session) {
-		lock.lock();
+		if (this.session != null)
+			device.clearSessionIndex(this.session.localIndex());
 
-		try {
-			if (this.session != null)
-				device.clearSessionIndex(this.session.localIndex());
+		this.session = session;
 
-			this.session = session;
+		if (session != null)
+			device.setPeerSessionIndex(connectionInfo.remoteStatic(), session.localIndex());
 
-			if (session != null)
-				device.setPeerSessionIndex(connectionInfo.remoteStatic(), session.localIndex());
-
-			condition.signalAll();
-		} finally {
-			lock.unlock();
-		}
+		sessionCondition.signalAll();
 	}
 
 
 	/**
 	 * Returns the current session, or null if no session is established.
 	 */
-	@Nullable EstablishedSession tryGetSessionNow() {
+	@Nullable
+	EstablishedSession tryGetSessionNow() {
 		return session;
 	}
 
 	/**
 	 * Marks the session as dead.  Requires that the peerLock be held.
 	 */
+	@GuardedBy("lock")
 	private void killSession() {
 		setSession(null);
 	}
@@ -306,5 +260,17 @@ final class SessionManager extends SessionManagerBase {
 		int localIndex = SessionIndex.nextSessionIndex.getAndIncrement();
 		device.setPeerSessionIndex(connectionInfo.remoteStatic(), localIndex);
 		return localIndex;
+	}
+
+	private void cleanup() {
+		if (lock.tryLock()) {
+			try {
+				killSession();
+			} finally {
+				lock.unlock();
+			}
+		} else {
+			logger.log(ERROR, "Failed to acquire lock, even though all workers should be shut down.  This is a bug.");
+		}
 	}
 }
