@@ -4,6 +4,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
 import java.util.LinkedList;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 
@@ -56,14 +57,14 @@ public class RelinquishingQueue<T> {
 	 * @return the first element in the queue, or null if the timeout expires
 	 * @throws InterruptedException if the thread is interrupted while waiting
 	 */
-	public T poll(Duration timeout) throws InterruptedException {
+	public T poll(Duration timeout) throws InterruptedException, TimeoutException {
 		var timeoutTime = Date.from(Instant.now().plus(timeout));
 		for (;;) {
 			if (!queue.isEmpty())
 				return queue.poll();
 
 			if (!condition.awaitUntil(timeoutTime))
-				return null;
+				throw new TimeoutException("Timed out waiting for queue");
 		}
 	}
 }

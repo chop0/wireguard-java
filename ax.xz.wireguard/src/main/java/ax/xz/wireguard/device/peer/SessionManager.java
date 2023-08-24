@@ -14,6 +14,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
@@ -138,8 +139,7 @@ final class SessionManager {
 
 	@GuardedBy("lock")
 	private void attemptSessionRecoveryIfRequired() throws InterruptedException {
-		var oldSession = tryGetSessionNow();
-		if (!(oldSession == null || oldSession.isExpired())) {
+		if (!(session == null || session.isExpired())) {
 			return;
 		}
 
@@ -154,8 +154,10 @@ final class SessionManager {
 			try {
 				var initiator = HandshakeInitiator.initiate(device, connectionInfo, getNewSessionIndex());
 
-				var response = inboundHandshakeResponseQueue.poll(Duration.ofSeconds(5));
-				if (response == null) {
+				MessageResponse response;
+				try {
+					response = inboundHandshakeResponseQueue.poll(Duration.ofSeconds(5));
+				} catch (TimeoutException ex) {
 					logger.log(WARNING, "Handshake response timed out");
 					continue;
 				}
