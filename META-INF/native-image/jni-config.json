@@ -12,10 +12,6 @@
   "methods":[{"name":"<init>","parameterTypes":[] }]
 },
 {
-  "name":"java.lang.String",
-  "methods":[{"name":"lastIndexOf","parameterTypes":["int"] }, {"name":"substring","parameterTypes":["int"] }]
-},
-{
   "name":"jdk.internal.access.JavaIOFileDescriptorAccess",
   "methods":[{"name":"registerCleanup","parameterTypes":["java.io.FileDescriptor"] }, {"name":"set","parameterTypes":["java.io.FileDescriptor","int"] }]
 },

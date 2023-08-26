@@ -1,11 +1,9 @@
 <component name="libraryTable">
   <library name="jsr305-3.0.2">
     <CLASSES>
-      <root url="jar://$PROJECT_DIR$/lib/jsr305-3.0.2.jar!/" />
+      <root url="jar://$PROJECT_DIR$/jsr305-3.0.2.jar!/" />
     </CLASSES>
     <JAVADOC />
-    <SOURCES>
-      <root url="jar://$PROJECT_DIR$/../.ideaLibSources/jsr305-3.0.2-sources.jar!/" />
-    </SOURCES>
+    <SOURCES />
   </library>
 </component>

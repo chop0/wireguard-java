@@ -11,7 +11,5 @@
     <orderEntry type="module" module-name="ax.xz.raw" />
     <orderEntry type="module" module-name="ax.xz.wireguard.noise" />
     <orderEntry type="library" name="jsr305-3.0.2" level="project" />
-    <orderEntry type="module" module-name="ax.xz.logging" />
-    <orderEntry type="module" module-name="ax.xz.raw.posix" scope="RUNTIME" />
   </component>
 </module>

@@ -2,7 +2,6 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/ax.xz.logging/ax.xz.logging.iml" filepath="$PROJECT_DIR$/ax.xz.logging/ax.xz.logging.iml" />
       <module fileurl="file://$PROJECT_DIR$/ax.xz.raw/ax.xz.raw.iml" filepath="$PROJECT_DIR$/ax.xz.raw/ax.xz.raw.iml" />
       <module fileurl="file://$PROJECT_DIR$/ax.xz.raw.posix/ax.xz.raw.posix.iml" filepath="$PROJECT_DIR$/ax.xz.raw.posix/ax.xz.raw.posix.iml" />
       <module fileurl="file://$PROJECT_DIR$/ax.xz.wireguard/ax.xz.wireguard.iml" filepath="$PROJECT_DIR$/ax.xz.wireguard/ax.xz.wireguard.iml" />
