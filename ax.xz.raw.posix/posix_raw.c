@@ -33,12 +33,17 @@ static jobject createFdObject(JNIEnv *env, int fd) {
     return fdObj;
 }
 
-// 	public native RawSocket open() throws IOException;
 JNIEXPORT jobject JNICALL Java_ax_xz_raw_posix_POSIXRawSocketProvider_open(JNIEnv *env, jclass cls) {
     int fd = IO_TRY(env, socket(AF_INET, SOCK_RAW, IPPROTO_RAW));
+    if (fd < 0) {
+		return NULL;
+	}
 
     int ip_hdrincl = 1;
-    IO_TRY(env, setsockopt(fd, IPPROTO_IP, IP_HDRINCL, &ip_hdrincl, sizeof(ip_hdrincl)));
+    if (IO_TRY(env, setsockopt(fd, IPPROTO_IP, IP_HDRINCL, &ip_hdrincl, sizeof(ip_hdrincl))) < 0) {
+		close(fd);
+		return NULL;
+	}
 
     jobject fdObject = createFdObject(env, fd);
 
@@ -109,9 +114,17 @@ static jobject open_tun(JNIEnv* env) {
 
 	for (int i = 0; i < 255; ++i) {
 		addr.sc_unit = i + 1;
-		int err = connect(fd, (struct sockaddr *)&addr, sizeof(addr));
-		if (err < 0) {
-			continue;
+		if (i == 254) {
+			int err = IO_TRY(env, connect(fd, (struct sockaddr *)&addr, sizeof(addr)));
+			if (err < 0) {
+				close(fd);
+				return NULL;
+			}
+		} else {
+			int err = connect(fd, (struct sockaddr *)&addr, sizeof(addr));
+			if (err < 0) {
+				continue;
+			}
 		}
 
 		jclass posixTunCls = FIND_CLASS(env, "ax/xz/raw/posix/POSIXTun");
@@ -133,7 +146,6 @@ static jobject open_tun(JNIEnv* env) {
 #error "Unsupported platform"
 #endif
 
-// public native Tun open() throws IOException;
 JNIEXPORT jobject JNICALL Java_ax_xz_raw_posix_POSIXTunProvider_open(JNIEnv *env, jclass clazz) {
 	// open tun device
 	return open_tun(env);

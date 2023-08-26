@@ -1,0 +1,26 @@
+[
+{
+  "name":"ax.xz.raw.posix.POSIXTun",
+  "methods":[{"name":"<init>","parameterTypes":["java.io.FileDescriptor","java.lang.String"] }, {"name":"name","parameterTypes":[] }]
+},
+{
+  "name":"ax.xz.wireguard.cli.WireguardTunnelCLI",
+  "methods":[{"name":"main","parameterTypes":["java.lang.String[]"] }]
+},
+{
+  "name":"java.io.FileDescriptor",
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name":"java.lang.String",
+  "methods":[{"name":"lastIndexOf","parameterTypes":["int"] }, {"name":"substring","parameterTypes":["int"] }]
+},
+{
+  "name":"jdk.internal.access.JavaIOFileDescriptorAccess",
+  "methods":[{"name":"registerCleanup","parameterTypes":["java.io.FileDescriptor"] }, {"name":"set","parameterTypes":["java.io.FileDescriptor","int"] }]
+},
+{
+  "name":"jdk.internal.access.SharedSecrets",
+  "methods":[{"name":"getJavaIOFileDescriptorAccess","parameterTypes":[] }]
+}
+]

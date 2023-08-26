@@ -3,7 +3,6 @@ package ax.xz.raw.posix;
 import ax.xz.raw.spi.RawSocket;
 import ax.xz.raw.spi.RawSocketProvider;
 
-import java.io.File;
 import java.io.IOException;
 
 public class POSIXRawSocketProvider implements RawSocketProvider {

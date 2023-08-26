@@ -257,6 +257,11 @@ public final class WireguardDevice implements Closeable {
 			default -> throw new IllegalArgumentException("Unknown message type");
 		};
 
+		if (peer == null) {
+			log.log(DEBUG, "Received message for unknown peer");
+			return;
+		}
+
 		peer.receiveInboundMessage(address, message);
 	}
 

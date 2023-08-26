@@ -2,7 +2,6 @@ package ax.xz.wireguard.noise.crypto;
 
 import java.security.DigestException;
 import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 
 public class Crypto {

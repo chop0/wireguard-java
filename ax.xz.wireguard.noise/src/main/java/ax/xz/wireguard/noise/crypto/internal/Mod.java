@@ -1,4 +1,4 @@
-package ax.xz.wireguard.noise.crypto;
+package ax.xz.wireguard.noise.crypto.internal;
 
 import java.util.Random;
 

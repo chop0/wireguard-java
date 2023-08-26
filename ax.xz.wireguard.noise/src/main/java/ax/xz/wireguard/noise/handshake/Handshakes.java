@@ -13,7 +13,6 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.DigestException;
 import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 
 import static ax.xz.wireguard.noise.crypto.Crypto.*;
 

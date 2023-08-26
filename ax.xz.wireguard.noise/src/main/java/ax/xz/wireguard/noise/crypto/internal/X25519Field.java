@@ -1,4 +1,4 @@
-package ax.xz.wireguard.noise.crypto;
+package ax.xz.wireguard.noise.crypto.internal;
 
 public abstract class X25519Field
 {

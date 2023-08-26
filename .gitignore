@@ -1,2 +1,6 @@
 *.conf
 **/out
+**/*.o
+**/*.dylib
+**/*.a
+**/*.class

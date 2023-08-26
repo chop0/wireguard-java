@@ -1,5 +1,7 @@
-package ax.xz.wireguard.noise.crypto;
+package ax.xz.wireguard.noise.crypto.internal;
 
+
+import ax.xz.wireguard.noise.crypto.X25519;
 
 /**
  * A low-level implementation of the Ed25519, Ed25519ctx, and Ed25519ph instantiations of the Edwards-Curve
