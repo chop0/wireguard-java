@@ -7,10 +7,8 @@ import java.util.ServiceLoader;
  * A provider for raw sockets.  A raw socket can send and receive L3 packets.
  */
 public interface RawSocketProvider {
-	ServiceLoader<RawSocketProvider> providerLoader = ServiceLoader.load(RawSocketProvider.class);
-
 	static RawSocketProvider getProvider() {
-		return providerLoader.stream().map(ServiceLoader.Provider::get)
+		return ServiceLoader.load(RawSocketProvider.class).stream().map(ServiceLoader.Provider::get)
 				.filter(RawSocketProvider::isAvailable)
 				.findFirst().orElseThrow(() -> new IllegalStateException("No RawSocketProvider found"));
 	}

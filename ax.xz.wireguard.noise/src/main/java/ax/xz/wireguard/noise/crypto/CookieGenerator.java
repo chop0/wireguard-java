@@ -1,7 +1,5 @@
 package ax.xz.wireguard.noise.crypto;
 
-import org.bouncycastle.crypto.digests.Blake2sDigest;
-
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 
@@ -36,15 +34,14 @@ public class CookieGenerator {
 			throw new RuntimeException(e); // TODO:  handle properly
 		}
 
-		var hash = new Blake2sDigest(mac1Key, 128 / 8, null, null);
+		var hash = new Blake2s(128 / 8, mac1Key);
 
 		var len = msg.position();
 		byte[] slice = new byte[len];
 		msg.slice(0, len).get(slice);
 		hash.update(slice, 0, slice.length);
 
-		byte[] mac1 = new byte[16];
-		hash.doFinal(mac1, 0);
+		byte[] mac1 = hash.digest();
 		msg.put(mac1);
 
 		// mac 2

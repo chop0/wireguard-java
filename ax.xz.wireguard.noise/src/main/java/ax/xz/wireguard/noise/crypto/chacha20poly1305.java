@@ -19,8 +19,8 @@ public class chacha20poly1305 {
 	interface CipherHolder {
 		ThreadLocal<Cipher> holder = ThreadLocal.withInitial(() -> {
 			try {
-				return Cipher.getInstance("ChaCha20-Poly1305", "BC");
-			} catch (NoSuchAlgorithmException | NoSuchProviderException | NoSuchPaddingException e) {
+				return Cipher.getInstance("ChaCha20-Poly1305");
+			} catch (NoSuchAlgorithmException | NoSuchPaddingException e) {
 				throw new RuntimeException(e);
 			}
 		});

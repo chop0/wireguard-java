@@ -1,5 +1,6 @@
 package ax.xz.wireguard.noise.handshake;
 
+import ax.xz.wireguard.noise.crypto.Blake2s;
 import ax.xz.wireguard.noise.keys.NoisePresharedKey;
 import ax.xz.wireguard.noise.keys.NoisePrivateKey;
 import ax.xz.wireguard.noise.keys.NoisePublicKey;
@@ -27,11 +28,11 @@ public class Handshakes {
 	private static byte[] getInitialHash() {
 		var result = new byte[32];
 		try {
-			var hash = MessageDigest.getInstance("BLAKE2s-256");
+			var hash = new Blake2s(32);
 			hash.update(INITIAL_CHAIN_KEY);
 			hash.update(WG_IDENTIFIER);
 			hash.digest(result, 0, INITIAL_CHAIN_KEY.length);
-		} catch (NoSuchAlgorithmException | DigestException e) {
+		} catch (DigestException e) {
 			throw new RuntimeException(e);
 		}
 		return result;
@@ -207,13 +208,7 @@ public class Handshakes {
 
 	private static void updateHMAC(byte[] hmac, byte[] data) {
 		interface DigestHolder {
-			ThreadLocal<MessageDigest> INSTANCE = ThreadLocal.withInitial(() -> {
-				try {
-					return MessageDigest.getInstance("BLAKE2s-256");
-				} catch (NoSuchAlgorithmException e) {
-					throw new RuntimeException(e);
-				}
-			});
+			ThreadLocal<MessageDigest> INSTANCE = ThreadLocal.withInitial(() -> new Blake2s(32));
 		}
 
 		var messageDigest = DigestHolder.INSTANCE.get();

@@ -16,5 +16,5 @@ public interface RawSocket extends Closeable {
 	void read(ByteBuffer buffer) throws IOException;
 
 	void setMTU(int mtu) throws IOException;
-	int mtu();
+	int mtu() throws IOException;
 }

@@ -18,14 +18,14 @@ public class TunnelDeviceBond {
 	private final WireguardDevice device;
 	private final RawSocket tunnel;
 
-	public TunnelDeviceBond(WireguardDevice device, RawSocket tunnel) {
+	public TunnelDeviceBond(WireguardDevice device, RawSocket tunnel) throws IOException {
 		this.device = device;
 		this.tunnel = tunnel;
 
 		device.setPhysicalLayerMTU(tunnel.mtu());
 	}
 
-	public void run() throws InterruptedException {
+	public void run() throws InterruptedException, IOException {
 		device.setPhysicalLayerMTU(tunnel.mtu() + 40 + 16);
 
 		try (var sts = new PersistentTaskExecutor<>("TunnelDeviceBond", RuntimeException::new, logger)) {

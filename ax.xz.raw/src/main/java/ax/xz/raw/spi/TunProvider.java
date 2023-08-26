@@ -8,10 +8,8 @@ import java.util.ServiceLoader;
  * is represented by a {@link RawSocket} object.
  */
 public interface TunProvider {
-	ServiceLoader<TunProvider> providerLoader = ServiceLoader.load(TunProvider.class);
-
 	static TunProvider getProvider() {
-		return providerLoader.stream().map(ServiceLoader.Provider::get)
+		return ServiceLoader.load(TunProvider.class, ClassLoader.getSystemClassLoader()).stream().map(ServiceLoader.Provider::get)
 				.filter(TunProvider::isAvailable)
 				.findFirst().orElseThrow(() -> new IllegalStateException("No TunProvider found"));
 	}

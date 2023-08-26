@@ -1,18 +1,11 @@
 package ax.xz.wireguard.noise.crypto;
 
-import org.bouncycastle.jce.provider.BouncyCastleProvider;
-
 import java.security.DigestException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.security.Security;
 import java.util.Arrays;
 
 public class Crypto {
-	static {
-		Security.addProvider(new BouncyCastleProvider());
-	}
-
 	public static final int POLY1305_TAG_SIZE = 16;
 	public static final int TIMESTAMP_LENGTH = 12;
 	public static final int POLY1305_NONCE_SIZE = 24;
@@ -111,10 +104,6 @@ public class Crypto {
 	}
 
 	public static MessageDigest getBlake2s256() {
-		try {
-			return MessageDigest.getInstance("BLAKE2s-256");
-		} catch (NoSuchAlgorithmException e) {
-			throw new RuntimeException("Could not initialise Blake2s-256 from JCE.  Make sure your Java installation is configured with a provider like BouncyCastle that supports it.", e);
-		}
+		return new Blake2s(32);
 	}
 }
