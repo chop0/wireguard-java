@@ -5,72 +5,93 @@
 
 #include <jni.h>
 
-#define FIND_CLASS(envVar, className) ({ \
+// Helper macro to convert to string
+#define STRINGIZE_DETAIL(x) #x
+#define STRINGIZE(x) STRINGIZE_DETAIL(x)
+
+// Abort macro
+#define ABORT_IF(env, expr, message) do {         \
+    if ((expr)) {                                 \
+        char buffer[512];                         \
+        snprintf(buffer, sizeof(buffer),          \
+                 "ABORT_IF(%s): %s\n\t"           \
+                 "at %s (%s:%s)",                 \
+                 #expr, message,                  \
+                 __PRETTY_FUNCTION__,             \
+                 __FILE__, STRINGIZE(__LINE__));  \
+        (*env)->FatalError(env, buffer);          \
+        abort();                                  \
+    }                                             \
+} while(0)
+
+// Macro to find a Java class
+// TODO:  make this work with msvc because it doesn't support statement expressions
+#define FIND_CLASS(env, className) ({ \
     static jclass cls = NULL; \
     if (cls == NULL) { \
-        cls = (*envVar)->FindClass(envVar, className); \
-        if (cls != NULL) { \
-            cls = (*envVar)->NewGlobalRef(envVar, cls); /* convert to global reference */ \
-        }                                   \
+        cls = (*env)->FindClass(env, className); \
+        ABORT_IF(env, cls == NULL, "Could not find class " className); \
+        cls = (*env)->NewGlobalRef(env, cls); \
     } \
     cls; \
 })
 
-#define GET_METHOD_ID(envVar, jclassVar, methodName, methodSig) ({ \
+// Macro to get a Java method ID
+#define GET_METHOD_ID(env, jclassVar, methodName, methodSig) ({ \
     static jmethodID mid = NULL; \
     if (mid == NULL) { \
-        mid = (*envVar)->GetMethodID(envVar, jclassVar, methodName, methodSig); \
+        mid = (*env)->GetMethodID(env, jclassVar, methodName, methodSig); \
+        ABORT_IF(env, mid == NULL, "Could not find method " methodName " with signature " methodSig); \
     } \
     mid; \
 })
 
-#define GET_STATIC_METHOD_ID(envVar, jclassVar, methodName, methodSig) ({ \
+// Macro to get a Java static method ID
+#define GET_STATIC_METHOD_ID(env, jclassVar, methodName, methodSig) ({ \
     static jmethodID mid = NULL; \
     if (mid == NULL) { \
-        mid = (*envVar)->GetStaticMethodID(envVar, jclassVar, methodName, methodSig); \
+        mid = (*env)->GetStaticMethodID(env, jclassVar, methodName, methodSig); \
+        ABORT_IF(env, mid == NULL, "Could not find static method " methodName " with signature " methodSig); \
     } \
     mid; \
 })
 
-#define GET_FIELD_ID(envVar, jclassVar, fieldName, fieldSig) ({ \
+// Macro to get a Java field ID
+#define GET_FIELD_ID(env, jclassVar, fieldName, fieldSig) ({ \
     static jfieldID fid = NULL; \
     if (fid == NULL) { \
-        fid = (*envVar)->GetFieldID(envVar, jclassVar, fieldName, fieldSig); \
+        fid = (*env)->GetFieldID(env, jclassVar, fieldName, fieldSig); \
+        ABORT_IF(env, fid == NULL, "Could not find field " fieldName " with signature " fieldSig); \
     } \
     fid; \
 })
 
+// Function to concatenate strings and convert to jstring
 jobject concat_to_jstring(JNIEnv* env, char const* str1, char const* str2) {
     char* str = malloc(strlen(str1) + strlen(str2) + 1);
     strcpy(str, str1);
     strcat(str, str2);
-
     jobject jstr = (*env)->NewStringUTF(env, str);
     free(str);
-
     return jstr;
 }
 
-#define THROW(env_, exceptionCls, message) ({ \
-	JNIEnv *env = (env_); \
-	jclass cls = FIND_CLASS(env, (exceptionCls)); \
-	jmethodID constructor = GET_METHOD_ID(env, cls, "<init>", "(Ljava/lang/String;)V"); \
-	jobject str = (*env)->NewStringUTF(env, (message)); \
-	(*env)->Throw(env, (*env)->NewObject(env, cls, constructor, str)); \
-})
+// Macro to throw a Java exception
+#define THROW(env, exceptionCls, message) do { \
+    jclass cls = FIND_CLASS(env, (exceptionCls)); \
+    jmethodID constructor = GET_METHOD_ID(env, cls, "<init>", "(Ljava/lang/String;)V"); \
+    jobject str = (*env)->NewStringUTF(env, (message)); \
+    (*env)->Throw(env, (*env)->NewObject(env, cls, constructor, str)); \
+} while(0)
 
-#define STRINGIZE_DETAIL(x) #x
-#define STRINGIZE(x) STRINGIZE_DETAIL(x)
-
-// evaluates the given expression.  if its result is less than 0, throws an IOException with the string of expr concatenated with the string of strerror(errno)
+// Macro to try an I/O operation and throw an IOException if it fails
 #define IO_TRY(env, expr) ({ \
-    JNIEnv *envEvaluated = (env); \
     int result = (expr); \
     if (result < 0) { \
-        jclass ioExceptionCls = FIND_CLASS(envEvaluated, "java/io/IOException"); \
-        jmethodID ioExceptionConstructor = GET_METHOD_ID(envEvaluated, ioExceptionCls, "<init>", "(Ljava/lang/String;)V"); \
-        jobject str = concat_to_jstring(envEvaluated, __FILE__ ":" STRINGIZE(__LINE__) " " #expr ": ", strerror(errno)); \
-        (*envEvaluated)->Throw(envEvaluated, (*envEvaluated)->NewObject(envEvaluated, ioExceptionCls, ioExceptionConstructor, str)); \
+        jclass ioExceptionCls = FIND_CLASS(env, "java/io/IOException"); \
+        jmethodID ioExceptionConstructor = GET_METHOD_ID(env, ioExceptionCls, "<init>", "(Ljava/lang/String;)V"); \
+        jobject str = concat_to_jstring(env, __FILE__ ":" STRINGIZE(__LINE__) " " #expr ": ", strerror(errno)); \
+        (*env)->Throw(env, (*env)->NewObject(env, ioExceptionCls, ioExceptionConstructor, str)); \
     } \
     result; \
 })
