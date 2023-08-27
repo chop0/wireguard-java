@@ -1,9 +1,14 @@
 package ax.xz.raw.spi;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetAddress;
+import java.nio.ByteBuffer;
 
-public interface Tun extends RawSocket {
+public interface Tun extends Closeable {
+	void write(ByteBuffer buffer) throws IOException;
+	void read(ByteBuffer buffer) throws IOException;
+
 	/**
 	 * Assigns the specified subnet to the interface.
 	 *
@@ -39,6 +44,9 @@ public interface Tun extends RawSocket {
 	default void removeAddress(InetAddress address) throws IOException {
 		removeSubnet(Subnet.ofAddress(address));
 	}
+
+	void setMTU(int mtu) throws IOException;
+	int mtu() throws IOException;
 
 	/**
 	 * A subnet is an IP address and a prefix length.

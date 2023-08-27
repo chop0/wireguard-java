@@ -1,6 +1,7 @@
 package ax.xz.wireguard.device;
 
 import ax.xz.raw.spi.RawSocket;
+import ax.xz.raw.spi.Tun;
 import ax.xz.wireguard.util.PersistentTaskExecutor;
 
 import java.io.IOException;
@@ -16,9 +17,9 @@ public class TunnelDeviceBond {
 	private static final Logger logger = System.getLogger(TunnelDeviceBond.class.getName());
 
 	private final WireguardDevice device;
-	private final RawSocket tunnel;
+	private final Tun tunnel;
 
-	public TunnelDeviceBond(WireguardDevice device, RawSocket tunnel) throws IOException {
+	public TunnelDeviceBond(WireguardDevice device, Tun tunnel) throws IOException {
 		this.device = device;
 		this.tunnel = tunnel;
 

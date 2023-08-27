@@ -14,7 +14,4 @@ import java.nio.ByteBuffer;
 public interface RawSocket extends Closeable {
 	void write(ByteBuffer buffer) throws IOException;
 	void read(ByteBuffer buffer) throws IOException;
-
-	void setMTU(int mtu) throws IOException;
-	int mtu() throws IOException;
 }

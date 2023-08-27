@@ -29,18 +29,6 @@ class POSIXRawSocket implements RawSocket {
 	}
 
 	@Override
-	public void setMTU(int mtu) throws IOException {
-		// TODO
-		throw new UnsupportedOperationException();
-	}
-
-	@Override
-	public int mtu() {
-		// TODO
-		throw new UnsupportedOperationException();
-	}
-
-	@Override
 	public void close() throws IOException {
 		inputChannel.close();
 		outputChannel.close();
