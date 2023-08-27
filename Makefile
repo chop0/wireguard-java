@@ -10,7 +10,7 @@ MODULES = ax.xz.raw ax.xz.raw.posix ax.xz.wireguard ax.xz.wireguard.noise
 JARFILE = $(OUT_DIR)/wireguard-java.jar
 
 $(OUT_DIR)/wireguard-java: $(OUT_DIR)/libposix_raw.dylib $(addprefix $(OUT_DIR)/,$(MODULES))
-	$(NATIVE_IMAGE) -o $@ --no-fallback -O2 --enable-preview -cp .:$(subst $(subst ,, ),:,$^):jsr305-3.0.2.jar ax.xz.wireguard.cli.WireguardTunnelCLI
+	$(NATIVE_IMAGE) -o $@ -march=native --no-fallback -O2 --enable-preview -cp .:$(subst $(subst ,, ),:,$^):jsr305-3.0.2.jar ax.xz.wireguard.cli.WireguardTunnelCLI
 
 $(OUT_DIR)/%: % FORCE
 	$(JAVAC) --enable-preview --source 21 -d $(OUT_DIR) --module-path jsr305-3.0.2.jar --module-source-path './*/src/main/java' -m $<
