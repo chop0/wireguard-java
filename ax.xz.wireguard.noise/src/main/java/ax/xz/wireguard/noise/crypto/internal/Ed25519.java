@@ -1,8 +1,6 @@
 package ax.xz.wireguard.noise.crypto.internal;
 
 
-import ax.xz.wireguard.noise.crypto.X25519;
-
 /**
  * A low-level implementation of the Ed25519, Ed25519ctx, and Ed25519ph instantiations of the Edwards-Curve
  * Digital Signature Algorithm specified in <a href="https://www.rfc-editor.org/rfc/rfc8032">RFC 8032</a>.

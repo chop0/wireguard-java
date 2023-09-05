@@ -1,4 +1,4 @@
-package ax.xz.wireguard.noise.crypto;
+package ax.xz.wireguard.noise.crypto.internal;
 
 import ax.xz.wireguard.noise.crypto.internal.Ed25519;
 import ax.xz.wireguard.noise.crypto.internal.X25519Field;
@@ -94,11 +94,6 @@ public abstract class X25519
 		F.mul(a, C_A24, z);
 		F.add(z, b, z);
 		F.mul(z, a, z);
-	}
-
-	public static void precompute()
-	{
-		Ed25519.precompute();
 	}
 
 	public static void scalarMult(byte[] k, int kOff, byte[] u, int uOff, byte[] r, int rOff)

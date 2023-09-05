@@ -4,3 +4,4 @@
 **/*.dylib
 **/*.a
 **/*.class
+**/bazel-*

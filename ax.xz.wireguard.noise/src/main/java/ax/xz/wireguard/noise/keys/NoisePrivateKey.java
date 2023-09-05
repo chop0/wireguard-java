@@ -1,6 +1,6 @@
 package ax.xz.wireguard.noise.keys;
 
-import ax.xz.wireguard.noise.crypto.X25519;
+import ax.xz.wireguard.noise.crypto.internal.X25519;
 
 import java.io.Serializable;
 import java.security.SecureRandom;

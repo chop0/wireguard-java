@@ -2,10 +2,8 @@ package ax.xz.raw.posix;
 
 import ax.xz.raw.spi.Tun;
 
-import java.io.FileDescriptor;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
+import java.io.*;
+import java.net.BindException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 
@@ -14,6 +12,9 @@ import static java.util.Objects.requireNonNull;
 
 public class POSIXTun implements Tun {
 	private static final System.Logger logger = System.getLogger(POSIXTun.class.getName());
+
+	private static final int AF_INET = AFINET();
+	private static final int AF_INET6 = AFINET6();
 
 	private final String name;
 
@@ -56,9 +57,6 @@ public class POSIXTun implements Tun {
 
 	private static ByteBuffer getPacketFamily(ByteBuffer packet) throws IOException {
 		interface Holder {
-			int AF_INET = 2;
-			int AF_INET6 = 10;
-
 			ByteBuffer IPV4 = ByteBuffer.allocateDirect(4).putInt(AF_INET).flip();
 			ByteBuffer IPV6 = ByteBuffer.allocateDirect(4).putInt(AF_INET6).flip();
 		}
@@ -95,6 +93,8 @@ public class POSIXTun implements Tun {
 				runCommand("ifconfig", name(), "inet6", subnet.toCIDRString(), "alias");
 		} catch (InterruptedException e) {
 			throw new RuntimeException(e);
+		} catch (IOException ex) {
+			throw new BindException("Could not add subnet " + subnet);
 		}
 	}
 
@@ -127,4 +127,7 @@ public class POSIXTun implements Tun {
 		if (!result.isEmpty())
 			logger.log(DEBUG, result);
 	}
+
+	private static native int AFINET();
+	private static native int AFINET6();
 }

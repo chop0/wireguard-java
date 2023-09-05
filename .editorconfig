@@ -2,3 +2,6 @@ root = true
 
 [*]
 indent_style = tab
+
+[WORKSPACE]
+indent_style = space

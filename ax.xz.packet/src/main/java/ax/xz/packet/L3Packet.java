@@ -1,4 +1,4 @@
-package packet;
+package ax.xz.packet;
 
 import java.nio.ByteBuffer;
 

@@ -1,4 +1,4 @@
-package packet;
+package ax.xz.packet;
 
 import java.nio.ByteBuffer;
 import java.util.Arrays;
@@ -8,14 +8,6 @@ public sealed interface ICMPv6 extends L4Packet6 {
 		return new EchoRequest((short) 0x6213, (short) 0, new byte[1024]);
 	}
 
-	private static short onesComplement(short value) {
-		return (short) (~value & 0xFFFF);
-	}
-
-	private static short onesComplementAdd(short a, short b) {
-		int c = (a & 0xFFFF) + (b & 0xFFFF);
-		return (short) ((c & 0xFFFF) + (c >> 16));
-	}
 
 	/*s
 		16-bit one's complement of the one's complement sum of the entire ICMPv6 message
@@ -31,14 +23,14 @@ public sealed interface ICMPv6 extends L4Packet6 {
 		short total = 0;
 
 		while (packet.remaining() > 1) {
-			total = onesComplementAdd(total, packet.getShort());
+			total = L4Packet6.onesComplementAdd(total, packet.getShort());
 		}
 
 		if (packet.remaining() == 1) {
-			total = onesComplementAdd(total, (short) (packet.get() << 8));
+			total = L4Packet6.onesComplementAdd(total, (short) (packet.get() << 8));
 		}
 
-		return onesComplement(total);
+		return L4Packet6.onesComplement(total);
 	}
 
 

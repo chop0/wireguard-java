@@ -1,4 +1,4 @@
-package packet;
+package ax.xz.packet;
 
 import java.net.Inet6Address;
 import java.net.UnknownHostException;

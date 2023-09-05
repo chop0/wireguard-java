@@ -2,6 +2,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 
 #include <jni.h>
 
@@ -14,8 +15,8 @@
     if ((expr)) {                                 \
         char buffer[512];                         \
         snprintf(buffer, sizeof(buffer),          \
-                 "ABORT_IF(%s): %s\n\t"           \
-                 "at %s (%s:%s)",                 \
+                 "ABORT_IF(%s): %s\n"             \
+                 "\tat %s (%s:%s)",                \
                  #expr, message,                  \
                  __PRETTY_FUNCTION__,             \
                  __FILE__, STRINGIZE(__LINE__));  \
@@ -23,6 +24,18 @@
         abort();                                  \
     }                                             \
 } while(0)
+
+#define FORMAT_IOEXCEPTION(message) ({ \
+	char buffer[512]; \
+	snprintf(buffer, sizeof(buffer), \
+		message ": " "%s\n" \
+		"\tat %s (%s:%s)", \
+		strerror(errno), \
+		__PRETTY_FUNCTION__, \
+		__FILE__, STRINGIZE(__LINE__) \
+	); \
+	buffer; \
+})
 
 // Macro to find a Java class
 // TODO:  make this work with msvc because it doesn't support statement expressions
@@ -67,7 +80,7 @@
 })
 
 // Function to concatenate strings and convert to jstring
-jobject concat_to_jstring(JNIEnv* env, char const* str1, char const* str2) {
+static jobject concat_to_jstring(JNIEnv* env, char const* str1, char const* str2) {
     char* str = malloc(strlen(str1) + strlen(str2) + 1);
     strcpy(str, str1);
     strcat(str, str2);
@@ -88,10 +101,7 @@ jobject concat_to_jstring(JNIEnv* env, char const* str1, char const* str2) {
 #define IO_TRY(env, expr) ({ \
     int result = (expr); \
     if (result < 0) { \
-        jclass ioExceptionCls = FIND_CLASS(env, "java/io/IOException"); \
-        jmethodID ioExceptionConstructor = GET_METHOD_ID(env, ioExceptionCls, "<init>", "(Ljava/lang/String;)V"); \
-        jobject str = concat_to_jstring(env, __FILE__ ":" STRINGIZE(__LINE__) " " #expr ": ", strerror(errno)); \
-        (*env)->Throw(env, (*env)->NewObject(env, ioExceptionCls, ioExceptionConstructor, str)); \
+        (*env)->ThrowNew(env, FIND_CLASS(env, "java/io/IOException"), FORMAT_IOEXCEPTION(#expr)); \
     } \
     result; \
 })

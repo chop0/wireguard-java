@@ -15,11 +15,15 @@ $(OUT_DIR)/wireguard-java: $(OUT_DIR)/libposix_raw.dylib $(addprefix $(OUT_DIR)/
 $(OUT_DIR)/%: % FORCE
 	$(JAVAC) --enable-preview --source 21 -d $(OUT_DIR) --module-path jsr305-3.0.2.jar --module-source-path './*/src/main/java' -m $<
 
-$(OUT_DIR)/libposix_raw.dylib: ax.xz.raw.posix/posix_raw.c
+$(OUT_DIR)/libposix_raw.dylib: ax.xz.raw.posix/src/main/c/posix_raw.o ax.xz.raw.posix/src/main/c/providers.o
 	$(CC) -I$(JAVA_HOME)/include -I$(JAVA_HOME)/include/darwin -shared -o $@ $^
+
+%.o: %.c
+	$(CC) -I$(JAVA_HOME)/include -I$(JAVA_HOME)/include/darwin -c -o $@ $^
 
 clean:
 	rm -rf $(OUT_DIR)/*
+	rm ax.xz.raw.posix/src/main/c/*.o
 
 FORCE: ;
 .PHONY: all compile clean
