@@ -2,8 +2,7 @@ package ax.xz.packet;
 
 import java.nio.ByteBuffer;
 
-public record UDP(int sourcePort, int destinationPort, byte[] data) implements L4Packet6 {
-
+public record UDP(int sourcePort, int destinationPort, byte[] data) implements L4Packet {
 	public static UDP datagram(int srcPort, int dstPort, byte[] data) {
 		return new UDP(srcPort, dstPort, data);
 	}
@@ -17,9 +16,10 @@ public record UDP(int sourcePort, int destinationPort, byte[] data) implements L
 		return new UDP(sourcePort, destinationPort, data);
 	}
 
-	short checksum(IPv6 ipv6) {
-		var packet = ByteBuffer.allocateDirect(40 + size());
+	public short checksum(L3Packet ipv6) {
+		var packet = ByteBuffer.allocateDirect(ipv6.size());
 		ipv6.pseudoHeader(packet);
+
 		packet.putShort((short) sourcePort);
 		packet.putShort((short) destinationPort);
 		packet.putShort((short) size());
@@ -30,17 +30,17 @@ public record UDP(int sourcePort, int destinationPort, byte[] data) implements L
 		short total = 0;
 
 		while (packet.remaining() > 1) {
-			total = L4Packet6.onesComplementAdd(total, packet.getShort());
+			total = L4Packet.onesComplementAdd(total, packet.getShort());
 		}
 
 		if (packet.remaining() == 1) {
-			total = L4Packet6.onesComplementAdd(total, (short) (packet.get() << 8));
+			total = L4Packet.onesComplementAdd(total, (short) (packet.get() << 8));
 		}
 
-		return L4Packet6.onesComplement(total);
+		return L4Packet.onesComplement(total);
 	}
 	@Override
-	public void write(IPv6 outer, ByteBuffer buf) {
+	public void write(L3Packet outer, ByteBuffer buf) {
 		buf.putShort((short) sourcePort);
 		buf.putShort((short) destinationPort);
 		buf.putShort((short) size());
@@ -54,7 +54,7 @@ public record UDP(int sourcePort, int destinationPort, byte[] data) implements L
 	}
 
 	@Override
-	public byte nextHeader() {
+	public byte protocol() {
 		return 17;
 	}
 }

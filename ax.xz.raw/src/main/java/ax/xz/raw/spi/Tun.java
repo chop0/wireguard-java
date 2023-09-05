@@ -4,6 +4,7 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
+import java.util.Set;
 
 public interface Tun extends Closeable {
 	void write(ByteBuffer buffer) throws IOException;
@@ -24,6 +25,14 @@ public interface Tun extends Closeable {
 	 * @throws IOException if the subnet could not be removed
 	 */
 	void removeSubnet(Subnet subnet) throws IOException;
+
+	/**
+	 * Gets a list of all subnets assigned to the interface.
+	 *
+	 * @return a list of all subnets assigned to the interface
+	 * @throws IOException if the subnets could not be retrieved
+	 */
+	Set<Subnet> subnets() throws IOException;
 
 	/**
 	 * Assigns the specified address to the interface.
@@ -71,7 +80,7 @@ public interface Tun extends Closeable {
 			return new Subnet(address, convertNetmaskToCIDR(netmask));
 		}
 
-		private static int convertNetmaskToCIDR(InetAddress netmask) {
+		public static int convertNetmaskToCIDR(InetAddress netmask) {
 			byte[] netmaskBytes = netmask.getAddress();
 			int cidr = 0;
 			boolean zero = false;

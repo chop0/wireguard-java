@@ -2,14 +2,15 @@ package ax.xz.packet;
 
 import java.nio.ByteBuffer;
 
-public interface L4Packet6 {
-	void write(IPv6 outer, ByteBuffer buf);
+public interface L4Packet {
+	void write(L3Packet outer, ByteBuffer buf);
 	short size();
-	byte nextHeader();
+	byte protocol();
+	short checksum(L3Packet l3Packet);
 
-	static L4Packet6 parse(byte nextHeader, ByteBuffer buf) {
+	static L4Packet parse(byte nextHeader, ByteBuffer buf) {
 		if (nextHeader == 0x3A) {
-			return ICMPv6.parse(buf);
+			return ICMP.parse(buf);
 		} else if (nextHeader == 0x11) {
 			return UDP.parse(buf);
 		}

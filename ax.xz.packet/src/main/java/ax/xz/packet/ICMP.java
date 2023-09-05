@@ -3,8 +3,8 @@ package ax.xz.packet;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 
-public sealed interface ICMPv6 extends L4Packet6 {
-	static ICMPv6 echoRequest() {
+public sealed interface ICMP extends L4Packet {
+	static ICMP echoRequest() {
 		return new EchoRequest((short) 0x6213, (short) 0, new byte[1024]);
 	}
 
@@ -12,9 +12,9 @@ public sealed interface ICMPv6 extends L4Packet6 {
 	/*s
 		16-bit one's complement of the one's complement sum of the entire ICMPv6 message
 	 */
-	default short checksum(IPv6 ipv6) {
-		var packet = ByteBuffer.allocate(40 + size());
-		ipv6.pseudoHeader(packet);
+	default short checksum(L3Packet l3Packet) {
+		var packet = ByteBuffer.allocate(l3Packet.size());
+		l3Packet.pseudoHeader(packet);
 		writeTypeAndCode(packet);
 		packet.putShort((short) 0); // checksum is 0 for checksum calculation
 		writePayload(packet);
@@ -23,26 +23,26 @@ public sealed interface ICMPv6 extends L4Packet6 {
 		short total = 0;
 
 		while (packet.remaining() > 1) {
-			total = L4Packet6.onesComplementAdd(total, packet.getShort());
+			total = L4Packet.onesComplementAdd(total, packet.getShort());
 		}
 
 		if (packet.remaining() == 1) {
-			total = L4Packet6.onesComplementAdd(total, (short) (packet.get() << 8));
+			total = L4Packet.onesComplementAdd(total, (short) (packet.get() << 8));
 		}
 
-		return L4Packet6.onesComplement(total);
+		return L4Packet.onesComplement(total);
 	}
 
 
 	@Override
-	default void write(IPv6 outer, ByteBuffer buf) {
+	default void write(L3Packet outer, ByteBuffer buf) {
 		writeTypeAndCode(buf);
 		buf.putShort(checksum(outer));
 		writePayload(buf);
 	}
 
 	@Override
-	default byte nextHeader() {
+	default byte protocol() {
 		return 58;
 	}
 
@@ -57,7 +57,7 @@ public sealed interface ICMPv6 extends L4Packet6 {
 	
 	byte[] variableData();
 
-	record DestinationUnreachable(Code code, byte[] variableData) implements ICMPv6 {
+	record DestinationUnreachable(Code code, byte[] variableData) implements ICMP {
 		public static final byte TYPE = 1;
 
 		public void writeTypeAndCode(ByteBuffer buf) {
@@ -113,7 +113,7 @@ public sealed interface ICMPv6 extends L4Packet6 {
 		}
 	}
 
-	record PacketTooBig(int MTU, byte[] variableData) implements ICMPv6 {
+	record PacketTooBig(int MTU, byte[] variableData) implements ICMP {
 		public static final byte TYPE = 2;
 
 		public void writeTypeAndCode(ByteBuffer buf) {
@@ -128,7 +128,7 @@ public sealed interface ICMPv6 extends L4Packet6 {
 
 		@Override
 		public short size() {
-			return (short) (ICMPv6.super.size() + 4);
+			return (short) (ICMP.super.size() + 4);
 		}
 
 		@Override
@@ -150,7 +150,7 @@ public sealed interface ICMPv6 extends L4Packet6 {
 		}
 	}
 
-	record TimeExceeded(Code code, byte[] variableData) implements ICMPv6 {
+	record TimeExceeded(Code code, byte[] variableData) implements ICMP {
 		public static final byte TYPE = 3;
 
 		public void writeTypeAndCode(ByteBuffer buf) {
@@ -200,7 +200,7 @@ public sealed interface ICMPv6 extends L4Packet6 {
 		}
 	}
 
-	record ParameterProblem(Code code, int pointer, byte[] variableData) implements ICMPv6 {
+	record ParameterProblem(Code code, int pointer, byte[] variableData) implements ICMP {
 		public static final byte TYPE = 4;
 
 		public void writeTypeAndCode(ByteBuffer buf) {
@@ -234,7 +234,7 @@ public sealed interface ICMPv6 extends L4Packet6 {
 
 		@Override
 		public short size() {
-			return (short) (ICMPv6.super.size() + 4);
+			return (short) (ICMP.super.size() + 4);
 		}
 
 		@Override
@@ -258,7 +258,7 @@ public sealed interface ICMPv6 extends L4Packet6 {
 		}
 	}
 
-	record EchoRequest(short identifier, short sequenceNumber, byte[] variableData) implements ICMPv6 {
+	record EchoRequest(short identifier, short sequenceNumber, byte[] variableData) implements ICMP {
 		public static final byte TYPE = (byte) 128;
 
 		public void writeTypeAndCode(ByteBuffer buf) {
@@ -274,7 +274,7 @@ public sealed interface ICMPv6 extends L4Packet6 {
 
 		@Override
 		public short size() {
-			return (short) (ICMPv6.super.size() + 4);
+			return (short) (ICMP.super.size() + 4);
 		}
 
 		@Override
@@ -298,7 +298,7 @@ public sealed interface ICMPv6 extends L4Packet6 {
 		}
 	}
 
-	record EchoReply(short identifier, short sequenceNumber, byte[] variableData) implements ICMPv6 {
+	record EchoReply(short identifier, short sequenceNumber, byte[] variableData) implements ICMP {
 		public static final byte TYPE = (byte) 129;
 
 		public void writeTypeAndCode(ByteBuffer buf) {
@@ -333,7 +333,7 @@ public sealed interface ICMPv6 extends L4Packet6 {
 		}
 	}
 
-	static ICMPv6 parse(ByteBuffer buf) {
+	static ICMP parse(ByteBuffer buf) {
 		byte type = buf.get();
 		byte code = buf.get();
 		buf.getShort(); // checksum
