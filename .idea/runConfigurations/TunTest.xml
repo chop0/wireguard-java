@@ -12,7 +12,7 @@
     <option name="MAIN_CLASS_NAME" value="ax.xz.raw.TunTest" />
     <option name="METHOD_NAME" value="" />
     <option name="TEST_OBJECT" value="class" />
-    <option name="VM_PARAMETERS" value="-ea --enable-preview --enable-native-access=ax.xz.raw.posix -Djava.library.path=$PROJECT_DIR$/out/production" />
+    <option name="VM_PARAMETERS" value="-ea --enable-preview --enable-native-access=ax.xz.raw.posix -Djava.library.path=$PROJECT_DIR$/build" />
     <method v="2">
       <option name="Make" enabled="true" />
     </method>

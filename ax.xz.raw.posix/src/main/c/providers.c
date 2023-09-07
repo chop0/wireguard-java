@@ -24,19 +24,6 @@ static jobject createFdObject(JNIEnv *env, int fd) {
     return fdObj;
 }
 
-JNIEXPORT jobject JNICALL Java_ax_xz_raw_posix_POSIXRawSocketProvider_open(JNIEnv *env, jclass cls) {
-	int fd = IO_TRY(env, open_raw_socket());
-	if (fd < 0) {
-		return NULL;
-	}
-
-    jobject fdObject = createFdObject(env, fd);
-
-    jclass rawSocketCls = FIND_CLASS(env, "ax/xz/raw/posix/POSIXRawSocket");
-    jmethodID rawSocketConstructor = GET_METHOD_ID(env, rawSocketCls, "<init>", "(Ljava/io/FileDescriptor;)V");
-    return (*env)->NewObject(env, rawSocketCls, rawSocketConstructor, fdObject);
-}
-
 JNIEXPORT jobject JNICALL Java_ax_xz_raw_posix_POSIXTunProvider_open(JNIEnv *env, jclass clazz) {
 	// open tun device
 	jclass posixTunCls = FIND_CLASS(env, "ax/xz/raw/posix/POSIXTun");

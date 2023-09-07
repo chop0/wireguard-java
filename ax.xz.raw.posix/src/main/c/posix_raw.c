@@ -2,8 +2,16 @@
 
 #include <sys/socket.h>
 #include <sys/ioctl.h>
+
+#ifdef __APPLE__
 #include <sys/kern_control.h>
 #include <sys/sys_domain.h>
+
+#elif defined(__linux__)
+#include <fcntl.h>
+#include <linux/if_tun.h>
+
+#endif
 
 #include <netinet/ip.h>
 #include <net/if.h>
