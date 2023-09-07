@@ -1,0 +1,20 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="TunTest" type="JUnit" factoryName="JUnit" nameIsGenerated="true">
+    <module name="ax.xz.raw.posix" />
+    <target name="root@localhost:22" />
+    <extension name="coverage">
+      <pattern>
+        <option name="PATTERN" value="ax.xz.raw.*" />
+        <option name="ENABLED" value="true" />
+      </pattern>
+    </extension>
+    <option name="PACKAGE_NAME" value="ax.xz.raw" />
+    <option name="MAIN_CLASS_NAME" value="ax.xz.raw.TunTest" />
+    <option name="METHOD_NAME" value="" />
+    <option name="TEST_OBJECT" value="class" />
+    <option name="VM_PARAMETERS" value="-ea --enable-preview --enable-native-access=ax.xz.raw.posix -Djava.library.path=$PROJECT_DIR$/out/production" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

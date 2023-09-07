@@ -1,6 +1,5 @@
 package ax.xz.wireguard.device;
 
-import ax.xz.raw.spi.RawSocket;
 import ax.xz.raw.spi.Tun;
 import ax.xz.wireguard.util.PersistentTaskExecutor;
 

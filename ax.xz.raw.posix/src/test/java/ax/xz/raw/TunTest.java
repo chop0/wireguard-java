@@ -196,7 +196,6 @@ public class TunTest {
 			tun.addAddress(rawSocketAddress.getAddress());
 
 			datagramListener.bind(javaSocketAddress);
-			datagramListener.connect(rawSocketAddress);
 
 			var payload = UDP.datagram(rawSocketAddress.getPort(), javaSocketAddress.getPort(), packetContents.getBytes(StandardCharsets.UTF_8));
 			var packet = IPv6.of((Inet6Address) rawSocketAddress.getAddress(), (Inet6Address) javaSocketAddress.getAddress(), payload);
@@ -207,7 +206,7 @@ public class TunTest {
 			tun.write(buf);
 
 			buf.clear();
-			assertTimeoutPreemptively(Duration.ofMillis(50), () -> datagramListener.read(buf), "Listener should receive packet");
+			assertTimeoutPreemptively(Duration.ofMillis(50), () -> datagramListener.receive(buf), "Listener should receive packet");
 			buf.flip();
 
 			assertEquals(buf.remaining(), packetContents.length(), "Payload length should match");
@@ -217,27 +216,25 @@ public class TunTest {
 
 	@DisplayName("Should be able to send a UDP datagram over IPv4")
 	@Test
-	public void testWrite4() throws IOException {
+	public void testWrite4() throws IOException, InterruptedException {
 		var packetContents = "Hello, world!";
 		var javaSocketAddress = new InetSocketAddress(LOCALHOST4, 1234);
 		var rawSocketAddress = new InetSocketAddress(TEST_ADDRESS4, 1234);
 
 		try (var datagramListener = DatagramChannel.open(StandardProtocolFamily.INET); var tun = new POSIXTunProvider().open()) {
-			tun.addAddress(rawSocketAddress.getAddress());
-
 			datagramListener.bind(javaSocketAddress);
-			datagramListener.connect(rawSocketAddress);
 
 			var payload = UDP.datagram(rawSocketAddress.getPort(), javaSocketAddress.getPort(), packetContents.getBytes(StandardCharsets.UTF_8));
 			var packet = IPv4.of((Inet4Address) rawSocketAddress.getAddress(), (Inet4Address) javaSocketAddress.getAddress(), payload);
 
 			var buf = ByteBuffer.allocate(1500);
+
 			packet.write(buf);
 			buf.flip();
 			tun.write(buf);
 
 			buf.clear();
-			assertTimeoutPreemptively(Duration.ofMillis(50), () -> datagramListener.read(buf), "Listener should receive packet");
+			assertTimeoutPreemptively(Duration.ofMillis(50), () -> datagramListener.receive(buf), "Listener should receive packet");
 			buf.flip();
 
 			assertEquals(buf.remaining(), packetContents.length(), "Payload length should match");

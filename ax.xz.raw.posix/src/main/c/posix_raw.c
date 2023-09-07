@@ -14,21 +14,6 @@
 
 #include "posix_raw.h"
 
-int open_raw_socket(void) {
- 	int fd = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
-    if (fd < 0) {
-		return -1;
-	}
-
-    int ip_hdrincl = 1;
-    if (setsockopt(fd, IPPROTO_IP, IP_HDRINCL, &ip_hdrincl, sizeof(ip_hdrincl)) < 0) {
-		close(fd);
-		return -1;
-	}
-
-	return fd;
-}
-
 #ifdef __linux__
 int open_tun(char *name, int nameLength) {
 	int fd = open("/dev/net/tun", O_RDWR);
