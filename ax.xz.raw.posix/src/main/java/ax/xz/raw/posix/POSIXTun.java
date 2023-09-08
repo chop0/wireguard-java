@@ -44,11 +44,7 @@ public class POSIXTun implements Tun {
 	@Override
 	public void write(ByteBuffer buffer) throws IOException { // TODO:  unit test
 		requireOpen();
-
-		if (needsAfTypePrefix())
-			outputChannel.write(new ByteBuffer[]{getPacketFamily(buffer), buffer});
-		else
-			outputChannel.write(buffer);
+		outputChannel.write(new ByteBuffer[]{getPacketFamily(buffer), buffer});
 	}
 
 	@Override
@@ -58,11 +54,7 @@ public class POSIXTun implements Tun {
 		interface TempHolder {
 			ThreadLocal<ByteBuffer> PACKET_FAMILY = ThreadLocal.withInitial(() -> ByteBuffer.allocateDirect(4));
 		}
-
-		if (needsAfTypePrefix())
-			inputChannel.read(new ByteBuffer[]{TempHolder.PACKET_FAMILY.get().clear(), buffer});
-		else
-			inputChannel.read(buffer);
+		inputChannel.read(new ByteBuffer[]{TempHolder.PACKET_FAMILY.get().clear(), buffer});
 	}
 
 	private static ByteBuffer getPacketFamily(ByteBuffer packet) throws IOException {
@@ -107,10 +99,6 @@ public class POSIXTun implements Tun {
 	@Override
 	public Set<Subnet> subnets() throws IOException {
 		return TunInterfaceConfigurer.get().subnets(name());
-	}
-
-	private boolean needsAfTypePrefix() {
-		return System.getProperty("os.name").toLowerCase().contains("bsd") || System.getProperty("os.name").toLowerCase().contains("os x");
 	}
 
 	private static native int AFINET();
