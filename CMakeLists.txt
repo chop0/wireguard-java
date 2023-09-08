@@ -9,7 +9,6 @@ find_package(JNI REQUIRED)
 if(JNI_FOUND)
   message(STATUS "JNI include directories: ${JNI_INCLUDE_DIRS}")
 else()
-
   message(FATAL_ERROR "Could not find JNI")
 endif()
 

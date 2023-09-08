@@ -52,18 +52,18 @@ public class TunTest {
 	@Test
 	public void testAddRemoveAddress() throws IOException {
 		try (var tun = new POSIXTunProvider().open()) {
-			tun.addAddress(LOCALHOST4);
-			tun.addAddress(LOCALHOST6);
+			tun.addAddress(TEST_ADDRESS4);
+			tun.addAddress(TEST_ADDRESS6);
 
-			assertTrue(tun.subnets().contains(new Tun.Subnet(LOCALHOST4, 32)), "Tun should have ipv4 address");
-			assertTrue(tun.subnets().contains(new Tun.Subnet(LOCALHOST6, 128)), "Tun should have ipv6 address");
+			assertTrue(tun.subnets().contains(new Tun.Subnet(TEST_ADDRESS4, 32)), "Tun should have ipv4 address");
+			assertTrue(tun.subnets().contains(new Tun.Subnet(TEST_ADDRESS6, 128)), "Tun should have ipv6 address");
 
-			tun.removeAddress(LOCALHOST6);
-			assertFalse(tun.subnets().contains(new Tun.Subnet(LOCALHOST6, 128)), "Tun should not have ipv6 address");
-			assertTrue(tun.subnets().contains(new Tun.Subnet(LOCALHOST4, 32)), "Tun should still have ipv4 address");
+			tun.removeAddress(TEST_ADDRESS6);
+			assertFalse(tun.subnets().contains(new Tun.Subnet(TEST_ADDRESS6, 128)), "Tun should not have ipv6 address");
+			assertTrue(tun.subnets().contains(new Tun.Subnet(TEST_ADDRESS4, 32)), "Tun should still have ipv4 address");
 
-			tun.removeAddress(LOCALHOST4);
-			assertFalse(tun.subnets().contains(new Tun.Subnet(LOCALHOST4, 32)), "Tun should not have ipv4 address");
+			tun.removeAddress(TEST_ADDRESS4);
+			assertFalse(tun.subnets().contains(new Tun.Subnet(TEST_ADDRESS4, 32)), "Tun should not have ipv4 address");
 		}
 	}
 
