@@ -31,7 +31,7 @@ int open_tun(char *name, int nameLength) {
 
 	struct ifreq ifr;
 	memset(&ifr, 0, sizeof(ifr));
-	ifr.ifr_flags = IFF_TUN | IFF_NO_PI;
+	ifr.ifr_flags = IFF_TUN;
 	int err = ioctl(fd, TUNSETIFF, &ifr);
 	if (err < 0) {
 		close(fd);
