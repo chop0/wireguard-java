@@ -1,6 +1,7 @@
 package ax.xz.packet;
 
 import java.net.Inet6Address;
+import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -63,7 +64,7 @@ public record IPv6(byte trafficClass, int flowLabel, int payloadLength, byte nex
 		buf.get(destination);
 		L4Packet payload = L4Packet.parse(nextHeader, buf);
 		try {
-			return new IPv6(trafficClass, flowLabel, payloadLength, nextHeader, hopLimit, (Inet6Address) Inet6Address.getByAddress(source), (Inet6Address) Inet6Address.getByAddress(destination), payload);
+			return new IPv6(trafficClass, flowLabel, payloadLength, nextHeader, hopLimit, (Inet6Address) InetAddress.getByAddress(source), (Inet6Address) InetAddress.getByAddress(destination), payload);
 		} catch (UnknownHostException e) {
 			throw new RuntimeException(e);
 		}

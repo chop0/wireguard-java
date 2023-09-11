@@ -4,9 +4,6 @@
     <bytecodeTargetLevel target="21" />
   </component>
   <component name="JavacSettings">
-    <option name="ADDITIONAL_OPTIONS_STRING" value="--enable-preview --source 21 --add-modules org.graalvm.truffle" />
-    <option name="ADDITIONAL_OPTIONS_OVERRIDE">
-      <module name="ax.xz.raw.posix.graal" options="--enable-preview --source 21 --add-exports org.graalvm.nativeimage.builder/com.oracle.svm.core.jdk=ax.xz.raw.posix.graal --add-exports org.graalvm.nativeimage.builder/com.oracle.svm.hosted.c=ax.xz.raw.posix.graal --add-exports org.graalvm.nativeimage.builder/com.oracle.svm.hosted=ax.xz.raw.posix.graal" />
-    </option>
+    <option name="ADDITIONAL_OPTIONS_STRING" value="--enable-preview --source 21" />
   </component>
 </project>

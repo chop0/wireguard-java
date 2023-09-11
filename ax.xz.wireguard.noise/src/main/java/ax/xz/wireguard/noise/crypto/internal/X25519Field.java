@@ -11,8 +11,6 @@ public abstract class X25519Field
 	private static final int[] P32 = new int[]{ 0xFFFFFFED, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
 			0xFFFFFFFF, 0x7FFFFFFF };
 
-	protected X25519Field() {}
-
 	public static void add(int[] x, int[] y, int[] z)
 	{
 		for (int i = 0; i < SIZE; ++i)

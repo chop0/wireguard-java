@@ -15,7 +15,7 @@ public record IPv4(short dscp, byte ecn, short identification, byte flags, short
 	@Override
 	public void write(ByteBuffer buf) {
 		buf.put((byte) ((0x4 << 4) | 5));
-		buf.put((byte) ((dscp << 2) | ecn));
+		buf.put((byte) ((dscp << 2) | (ecn & 0xff)));
 		buf.putShort((short) size());
 
 		buf.putShort(identification);
@@ -84,7 +84,6 @@ public record IPv4(short dscp, byte ecn, short identification, byte flags, short
 		buf.order(ByteOrder.BIG_ENDIAN);
 
 		byte versionIHL = buf.get();
-		byte ihl = (byte) (versionIHL & 0xF);
 		byte version = (byte) ((versionIHL >> 4) & 0xF);
 		if (version != 4)
 			throw new IllegalArgumentException("Invalid IPv4 version");
@@ -93,14 +92,14 @@ public record IPv4(short dscp, byte ecn, short identification, byte flags, short
 		byte dscp = (byte) (dscpEcn >> 2);
 		byte ecn = (byte) (dscpEcn & 0x3);
 
-		short totalLength = buf.getShort();
+		buf.getShort();
 		short identification = buf.getShort();
 		short flagsFragmentOffset = buf.getShort();
 		byte flags = (byte) ((flagsFragmentOffset >> 13) & 0x7);
 		short fragmentOffset = (short) (flagsFragmentOffset & 0x1FFF);
 		byte ttl = buf.get();
 		byte protocol = buf.get();
-		short checksum = buf.getShort();
+		buf.getShort();
 		byte[] source = new byte[4];
 		buf.get(source);
 		byte[] destination = new byte[4];

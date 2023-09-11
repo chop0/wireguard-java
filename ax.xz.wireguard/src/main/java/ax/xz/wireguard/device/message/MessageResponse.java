@@ -1,8 +1,8 @@
 package ax.xz.wireguard.device.message;
 
 import ax.xz.wireguard.noise.crypto.CookieGenerator;
+import ax.xz.wireguard.noise.crypto.Crypto;
 import ax.xz.wireguard.noise.keys.NoisePublicKey;
-import ax.xz.wireguard.noise.crypto.chacha20poly1305;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -20,7 +20,7 @@ import java.nio.ByteOrder;
  * }
  */
 public final class MessageResponse extends PooledMessage implements Message {
-	public static final int LENGTH = 4 + 4 + 4 + NoisePublicKey.LENGTH + chacha20poly1305.Overhead + chacha20poly1305.Overhead * 2;
+	public static final int LENGTH = 4 + 4 + 4 + NoisePublicKey.LENGTH + Crypto.ChaChaPoly1305Overhead + Crypto.ChaChaPoly1305Overhead * 2;
 	public static final int TYPE = 2;
 
 	public MessageResponse(ByteBuffer buffer) {
@@ -60,7 +60,7 @@ public final class MessageResponse extends PooledMessage implements Message {
 	}
 
 	public byte[] encryptedEmpty() {
-		byte[] encryptedEmpty = new byte[chacha20poly1305.Overhead];
+		byte[] encryptedEmpty = new byte[Crypto.ChaChaPoly1305Overhead];
 		buffer().get(12 + NoisePublicKey.LENGTH, encryptedEmpty);
 		return encryptedEmpty;
 	}

@@ -14,7 +14,6 @@ import static java.util.Objects.requireNonNull;
  * This class handles the handshake initiation process
  */
 class HandshakeInitiator {
-	private final WireguardDevice device;
 	private final Peer.PeerConnectionInfo connectionInfo;
 
 	private final int localIndex;
@@ -26,7 +25,6 @@ class HandshakeInitiator {
 		requireNonNull(connectionInfo);
 		requireNonNull(connectionInfo.endpoint());
 
-		this.device = device;
 		this.connectionInfo = connectionInfo;
 		this.localIndex = localIndex;
 

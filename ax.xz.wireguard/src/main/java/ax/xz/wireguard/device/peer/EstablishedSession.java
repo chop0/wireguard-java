@@ -5,6 +5,7 @@ import ax.xz.wireguard.noise.handshake.SymmetricKeypair;
 import ax.xz.wireguard.device.message.MessageTransport;
 
 import javax.crypto.BadPaddingException;
+import javax.crypto.ShortBufferException;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -44,6 +45,8 @@ final class EstablishedSession {
 
 			long counter = cipher(data, ByteBuffer.wrap(ciphertext));
 			return MessageTransport.create(remoteIndex, counter, ciphertext);
+		} catch (ShortBufferException e) {
+			throw new Error(e); // should never happen
 		} finally {
 			cipherLock.unlock();
 		}
@@ -65,7 +68,7 @@ final class EstablishedSession {
 	/**
 	 * @return the counter value used as a nonce for the packet
 	 */
-	long cipher(ByteBuffer src, ByteBuffer dst) {
+	long cipher(ByteBuffer src, ByteBuffer dst) throws ShortBufferException {
 		return keypair.cipher(src, dst);
 	}
 

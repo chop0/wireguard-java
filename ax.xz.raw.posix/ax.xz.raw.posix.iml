@@ -8,7 +8,6 @@
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />
-    <orderEntry type="module" module-name="ax.xz.raw" />
     <orderEntry type="library" name="jsr305-3.0.2" level="project" />
     <orderEntry type="module-library" scope="TEST">
       <library>
@@ -27,5 +26,9 @@
       </library>
     </orderEntry>
     <orderEntry type="module" module-name="ax.xz.packet" scope="TEST" />
+    <orderEntry type="module" module-name="ax.xz.raw" />
+  </component>
+  <component name="SonarLintModuleSettings">
+    <option name="uniqueId" value="8f8e4391-5477-4db2-9d61-32f66171b46a" />
   </component>
 </module>

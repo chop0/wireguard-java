@@ -2,6 +2,7 @@ package ax.xz.wireguard.noise.crypto;
 
 import ax.xz.wireguard.noise.crypto.internal.Blake2s;
 
+import java.nio.ByteBuffer;
 import java.security.DigestException;
 import java.security.MessageDigest;
 import java.util.Arrays;
@@ -12,7 +13,8 @@ public class Crypto {
 	public static final int POLY1305_NONCE_SIZE = 24;
 	public static final int BLAKE2S_SIZE_256 = 32;
 	public static final int BLAKE2S_SIZE_128 = 16;
-	public static final int TauSize = 32;
+	public static final int ChaChaPoly1305NonceSize = 12;
+	public static final int ChaChaPoly1305Overhead = 16;
 
 	/**
 	 * TAI64N(): TAI64N timestamp of current time which is 12 bytes
@@ -72,27 +74,31 @@ public class Crypto {
 	}
 
 
-	public static void KDF1(byte[] t0, byte[] key, byte[] input) {
-		byte[] t1 = new byte[BLAKE2S_SIZE_256];
-		HMAC(t1, key, input);
-		HMAC(t1, t1, new byte[]{0x1});
-
-		System.arraycopy(t1, 0, t0, 0, t0.length);
+	private static byte[] HKDF_Extract(byte[] salt, byte[] IKM) {
+		byte[] PRK = new byte[BLAKE2S_SIZE_256];
+		HMAC(PRK, salt, IKM);
+		return PRK;
 	}
 
-	public static void KDF2(byte[] t0, byte[] t1, byte[] key, byte[] input) {
-		byte[] prk = new byte[BLAKE2S_SIZE_256];
-		HMAC(prk, key, input);
-		HMAC(t0, prk, new byte[]{0x1});
-		HMAC(t1, prk, t0, new byte[]{0x2});
+	private static byte[][] HKDF_Expand(byte[] PRK, byte[] info, int N) {
+		byte[][] T = new byte[N][BLAKE2S_SIZE_256];
+
+		for (int n = 1; n <= N; n++) {
+			if (n > 1)
+				HMAC(T[n - 1], PRK, T[n - 2], info, new byte[]{(byte) n});
+			else
+				HMAC(T[n - 1], PRK, info, new byte[]{(byte) n});
+		}
+
+		return T;
 	}
 
-	public static void KDF3(byte[] t0, byte[] t1, byte[] t2, byte[] key, byte[] input) {
-		byte[] prk = new byte[BLAKE2S_SIZE_256];
-		HMAC(prk, key, input);
-		HMAC(t0, prk, new byte[]{0x1});
-		HMAC(t1, prk, t0, new byte[]{0x2});
-		HMAC(t2, prk, t1, new byte[]{0x3});
+	public static byte[] deriveKey(byte[] salt, byte[] IKM, int n) {
+		return HKDF_Expand(HKDF_Extract(salt, IKM), new byte[0], n)[n - 1];
+	}
+
+	public static byte[] deriveKey(byte[] salt, byte[] IKM) {
+		return deriveKey(salt, IKM, 1);
 	}
 
 	public static byte[] BLAKE2s256(byte[]... data) {

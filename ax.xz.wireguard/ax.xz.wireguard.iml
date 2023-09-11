@@ -8,9 +8,13 @@
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />
-    <orderEntry type="module" module-name="ax.xz.raw" />
-    <orderEntry type="module" module-name="ax.xz.wireguard.noise" />
     <orderEntry type="library" name="jsr305-3.0.2" level="project" />
     <orderEntry type="module" module-name="ax.xz.packet" scope="TEST" />
+    <orderEntry type="module" module-name="ax.xz.raw" />
+    <orderEntry type="module" module-name="ax.xz.wireguard.noise" />
+    <orderEntry type="module" module-name="ax.xz.raw.posix" scope="RUNTIME" />
+  </component>
+  <component name="SonarLintModuleSettings">
+    <option name="uniqueId" value="bd8ecb5d-ae52-41a0-b8f0-bce91f6389a5" />
   </component>
 </module>

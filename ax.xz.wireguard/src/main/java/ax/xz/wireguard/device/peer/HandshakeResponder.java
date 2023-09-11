@@ -16,9 +16,6 @@ import static java.util.Objects.requireNonNull;
  * This class handles the handshake initiation process
  */
 class HandshakeResponder {
-	private final WireguardDevice device;
-
-	private final int localIndex;
 
 	private final Handshakes.ResponderHandshake handshake;
 	private final EstablishedSession session;
@@ -26,9 +23,6 @@ class HandshakeResponder {
 	private HandshakeResponder(WireguardDevice device, MessageInitiation initiation, Duration keepaliveInterval, InetSocketAddress remoteAddress, int localIndex) throws IOException {
 		requireNonNull(device);
 		requireNonNull(initiation);
-
-		this.device = device;
-		this.localIndex = localIndex;
 
 		try {
 			this.handshake = Handshakes.responderHandshake(device.getStaticIdentity(), initiation.ephemeral(), initiation.encryptedStatic(), initiation.encryptedTimestamp());

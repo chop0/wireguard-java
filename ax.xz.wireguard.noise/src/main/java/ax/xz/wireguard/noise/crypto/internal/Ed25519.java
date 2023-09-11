@@ -64,7 +64,6 @@ public abstract class Ed25519
 	private static final int PRECOMP_BLOCKS = 8;
 	private static final int PRECOMP_TEETH = 4;
 	private static final int PRECOMP_SPACING = 8;
-	private static final int PRECOMP_RANGE = PRECOMP_BLOCKS * PRECOMP_TEETH * PRECOMP_SPACING; // range == 256
 	private static final int PRECOMP_POINTS = 1 << (PRECOMP_TEETH - 1);
 	private static final int PRECOMP_MASK = PRECOMP_POINTS - 1;
 

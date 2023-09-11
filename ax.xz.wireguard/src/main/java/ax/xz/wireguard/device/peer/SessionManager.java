@@ -62,7 +62,8 @@ final class SessionManager {
 			executor.join();
 		} catch (InterruptedException e) {
 			logger.log(DEBUG, "Broken connection worker interrupted");
-		} catch (Throwable e) {
+			Thread.currentThread().interrupt();
+		} catch (Exception e) {
 			logger.log(WARNING, "Unhandled error in broken connection worker", e);
 			throw e;
 		} finally {
@@ -84,6 +85,7 @@ final class SessionManager {
 			}
 		} catch (InterruptedException e) {
 			logger.log(DEBUG, "Session initiation thread interrupted");
+			Thread.currentThread().interrupt();
 		} finally {
 			lock.unlock();
 		}
@@ -103,7 +105,8 @@ final class SessionManager {
 			}
 		} catch (InterruptedException e) {
 			logger.log(DEBUG, "Keepalive worker interrupted");
-		} catch (Throwable e) {
+			Thread.currentThread().interrupt();
+		} catch (Exception e) {
 			logger.log(ERROR, "Keepalive worker failed", e);
 			throw e;
 		} finally {
@@ -117,23 +120,29 @@ final class SessionManager {
 
 		try {
 			while (!Thread.interrupted()) {
-				try {
-					var message = inboundHandshakeInitiationQueue.take();
-					var initiation = message.getKey();
-					var origin = message.getValue();
-
-					setSession(HandshakeResponder.respond(device, initiation, connectionInfo.keepaliveInterval(), origin, getNewSessionIndex()));
-					logger.log(INFO, "Completed handshake (responder)");
-				} catch (IOException e) {
-					logger.log(WARNING, "Failed to complete handshake (responder)", e);
-					killSession();
-				}
+				handleNextInitiation();
 			}
 		} catch (InterruptedException e) {
 			logger.log(DEBUG, "Handshake responder interrupted");
+			Thread.currentThread().interrupt();
 		} finally {
 			lock.unlock();
 			logger.log(DEBUG, "Handshake responder shutting down");
+		}
+	}
+
+	@GuardedBy("lock")
+	private void handleNextInitiation() throws InterruptedException {
+		try {
+			var message = inboundHandshakeInitiationQueue.take();
+			var initiation = message.getKey();
+			var origin = message.getValue();
+
+			setSession(HandshakeResponder.respond(device, initiation, connectionInfo.keepaliveInterval(), origin, getNewSessionIndex()));
+			logger.log(INFO, "Completed handshake (responder)");
+		} catch (IOException e) {
+			logger.log(WARNING, "Failed to complete handshake (responder)", e);
+			killSession();
 		}
 	}
 
@@ -257,6 +266,9 @@ final class SessionManager {
 	private int getNewSessionIndex() {
 		class SessionIndex {
 			private static final AtomicInteger nextSessionIndex = new AtomicInteger(0);
+
+			private SessionIndex() {
+			}
 		}
 
 		int localIndex = SessionIndex.nextSessionIndex.getAndIncrement();

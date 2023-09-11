@@ -1,30 +1,29 @@
 package ax.xz.wireguard.noise.handshake;
 
-import ax.xz.wireguard.noise.crypto.chacha20poly1305;
 import ax.xz.wireguard.noise.crypto.internal.Blake2s;
 import ax.xz.wireguard.noise.keys.NoisePresharedKey;
 import ax.xz.wireguard.noise.keys.NoisePrivateKey;
 import ax.xz.wireguard.noise.keys.NoisePublicKey;
 
-import javax.crypto.BadPaddingException;
-import java.nio.ByteBuffer;
+import javax.crypto.*;
+import javax.crypto.spec.IvParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
-import java.security.DigestException;
-import java.security.MessageDigest;
+import java.security.*;
 
 import static ax.xz.wireguard.noise.crypto.Crypto.*;
 import static java.lang.System.Logger;
 import static java.lang.System.Logger.Level.DEBUG;
 
 public class Handshakes {
-	private static final byte[] ZeroNonce = new byte[chacha20poly1305.NonceSize];
+	private static final byte[] ZeroNonce = new byte[ChaChaPoly1305NonceSize];
 	private static final byte[] NOISE_CONSTRUCTION = "Noise_IKpsk2_25519_ChaChaPoly_BLAKE2s".getBytes(StandardCharsets.UTF_8);
 	private static final byte[] WG_IDENTIFIER = "WireGuard v1 zx2c4 Jason@zx2c4.com".getBytes(StandardCharsets.UTF_8);
 
 	private static final byte[] INITIAL_CHAIN_KEY = BLAKE2s256(NOISE_CONSTRUCTION);
-	private static final byte[] INITIAL_HASH = getInitialHash();
+	private static final byte[] INITIAL_HASH;
 
-	private static byte[] getInitialHash() {
+	static {
 		var result = new byte[32];
 		try {
 			var hash = new Blake2s(32);
@@ -34,7 +33,7 @@ public class Handshakes {
 		} catch (DigestException e) {
 			throw new RuntimeException(e);
 		}
-		return result;
+		INITIAL_HASH = result;
 	}
 
 	public static InitiatorStageOne initiateHandshake(NoisePrivateKey localKeypair, NoisePublicKey remotePublicKey, NoisePresharedKey presharedKey) {
@@ -48,15 +47,27 @@ public class Handshakes {
 	public static class InitiatorStageOne {
 		private static final Logger logger = System.getLogger(InitiatorStageOne.class.getName());
 
+		private final Cipher chacha20;
+
+		{
+			try {
+				chacha20 = Cipher.getInstance("ChaCha20-Poly1305");
+			} catch (NoSuchAlgorithmException e) {
+				throw new RuntimeException(e);
+			} catch (NoSuchPaddingException e) {
+				throw new RuntimeException(e);
+			}
+		}
+
 		private final byte[] hash = INITIAL_HASH.clone();
-		private final byte[] chainKey = INITIAL_CHAIN_KEY.clone();
+		private byte[] chainKey = INITIAL_CHAIN_KEY;
 
 		private final NoisePrivateKey localEphemeral;
 		private final NoisePrivateKey localKeypair;
 		private final NoisePresharedKey presharedKey;
 
-		private final byte[] encryptedStatic = new byte[chacha20poly1305.Overhead + NoisePublicKey.LENGTH];
-		private final byte[] encryptedTimestamp = new byte[chacha20poly1305.Overhead + 12];
+		private final byte[] encryptedStatic = new byte[ChaChaPoly1305Overhead + NoisePublicKey.LENGTH];
+		private final byte[] encryptedTimestamp = new byte[ChaChaPoly1305Overhead + 12];
 
 		private InitiatorStageOne(NoisePrivateKey localKeypair, NoisePublicKey remotePublicKey, NoisePresharedKey presharedKey) {
 			this.localEphemeral = NoisePrivateKey.newPrivateKey();
@@ -66,21 +77,76 @@ public class Handshakes {
 			var ephemeral = localEphemeral.publicKey();
 			// create ephemeral key
 			updateHMAC(hash, remotePublicKey.data());
-			KDF1(chainKey, chainKey, ephemeral.data());
+			chainKey = deriveKey(chainKey, ephemeral.data());
 			updateHMAC(hash, ephemeral.data());
 
 			// encrypt static key
-			byte[] key = new byte[chacha20poly1305.KeySize];
-			KDF2(chainKey, key, chainKey, localEphemeral.sharedSecret(remotePublicKey).data());
+			var key = new SecretKeySpec(deriveKey(chainKey, localEphemeral.sharedSecret(remotePublicKey).data(), 2), "ChaCha20-Poly1305");
+			chainKey = deriveKey(chainKey, localEphemeral.sharedSecret(remotePublicKey).data(), 1);
 
-			chacha20poly1305.cipher(key, ByteBuffer.wrap(localKeypair.publicKey().data()), ByteBuffer.wrap(encryptedStatic), new byte[chacha20poly1305.NonceSize], hash);
-			updateHMAC(hash, encryptedStatic);
+			try {
+				chacha20.init(Cipher.ENCRYPT_MODE, key, new IvParameterSpec(ZeroNonce));
+				chacha20.updateAAD(hash);
+				chacha20.doFinal(localKeypair.publicKey().data(), 0, NoisePublicKey.LENGTH, encryptedStatic);
 
-			// encrypt timestamp
-			KDF2(chainKey, key, chainKey, localKeypair.sharedSecret(remotePublicKey).data());
-			chacha20poly1305.cipher(key, ByteBuffer.wrap(TAI64N()), ByteBuffer.wrap(encryptedTimestamp), new byte[chacha20poly1305.NonceSize], hash);
+				updateHMAC(hash, encryptedStatic);
+
+				// encrypt timestamp
+				key = new SecretKeySpec(deriveKey(chainKey, localKeypair.sharedSecret(remotePublicKey).data(), 2), "ChaCha20-Poly1305");
+				chainKey = deriveKey(chainKey, localKeypair.sharedSecret(remotePublicKey).data(), 1);
+
+				chacha20.init(Cipher.ENCRYPT_MODE, key, new IvParameterSpec(ZeroNonce));
+				chacha20.updateAAD(hash);
+				chacha20.doFinal(TAI64N(), 0, 12, encryptedTimestamp);
+			} catch (
+				ShortBufferException |
+				IllegalBlockSizeException |
+				BadPaddingException |
+				InvalidAlgorithmParameterException |
+				InvalidKeyException e
+			) {
+				throw new RuntimeException(e);
+			}
 
 			updateHMAC(hash, encryptedTimestamp);
+		}
+
+		public SymmetricKeypair consumeMessageResponse(NoisePublicKey remoteEphemeral, byte[] encryptedEmpty) throws BadPaddingException {
+			// lookup handshake by receiver
+			// finish 3-way DH
+			updateHMAC(hash, remoteEphemeral.data());
+			chainKey = deriveKey(chainKey, remoteEphemeral.data());
+
+			chainKey = deriveKey(chainKey, localEphemeral.sharedSecret(remoteEphemeral).data());
+			chainKey = deriveKey(chainKey, localKeypair.sharedSecret(remoteEphemeral).data());
+
+			// add preshared key (psk)
+			byte[] tau = deriveKey(chainKey, presharedKey.data(), 2);
+			var key = new SecretKeySpec(deriveKey(chainKey, presharedKey.data(), 3), "ChaCha20-Poly1305");
+			chainKey = deriveKey(chainKey, presharedKey.data(), 1);
+
+			updateHMAC(hash, tau);
+
+			try {
+				chacha20.init(Cipher.DECRYPT_MODE, key, new IvParameterSpec(ZeroNonce));
+
+				chacha20.updateAAD(hash);
+				chacha20.doFinal(encryptedEmpty);
+			} catch (InvalidKeyException | InvalidAlgorithmParameterException e) {
+				throw new IllegalArgumentException(e);
+			} catch (IllegalBlockSizeException e) {
+				throw new Error("unexpected error (we're using a stream cipher)", e);
+			}
+			updateHMAC(hash, encryptedEmpty);
+
+			// create send/receive keys
+			var sendKey = new SecretKeySpec(deriveKey(chainKey, new byte[0], 1), "ChaCha20-Poly1305");
+			var receiveKey = new SecretKeySpec(deriveKey(chainKey, new byte[0], 2), "ChaCha20-Poly1305");
+
+			var kp = new SymmetricKeypair(sendKey, receiveKey);
+
+			logger.log(DEBUG, "DH key exchange completed");
+			return kp;
 		}
 
 		public NoisePrivateKey getLocalEphemeral() {
@@ -94,100 +160,99 @@ public class Handshakes {
 		public byte[] getEncryptedTimestamp() {
 			return encryptedTimestamp;
 		}
-
-		public SymmetricKeypair consumeMessageResponse(NoisePublicKey remoteEphemeral, byte[] encryptedEmpty) throws BadPaddingException {
-			// lookup handshake by receiver
-			// finish 3-way DH
-			updateHMAC(hash, remoteEphemeral.data());
-			KDF1(chainKey, chainKey, remoteEphemeral.data());
-
-			KDF1(chainKey, chainKey, localEphemeral.sharedSecret(remoteEphemeral).data());
-			KDF1(chainKey, chainKey, localKeypair.sharedSecret(remoteEphemeral).data());
-
-			// add preshared key (psk)
-			byte[] tau = new byte[TauSize];
-			byte[] key = new byte[chacha20poly1305.KeySize];
-			KDF3(chainKey, tau, key, chainKey, presharedKey.data());
-			updateHMAC(hash, tau);
-
-			// authenticate transcript
-			chacha20poly1305.decipher(key, ByteBuffer.wrap(encryptedEmpty), ByteBuffer.allocate(0), ZeroNonce, hash);
-			updateHMAC(hash, encryptedEmpty);
-
-			// create send/receive keys
-			byte[] sendKey = new byte[chacha20poly1305.KeySize];
-			byte[] receiveKey = new byte[chacha20poly1305.KeySize];
-
-			KDF2(sendKey, receiveKey, this.chainKey, new byte[0]);
-			var kp = new SymmetricKeypair(sendKey, receiveKey);
-
-			logger.log(DEBUG, "DH key exchange completed");
-			return kp;
-		}
-
 	}
 
 	public static class ResponderHandshake {
-		private final byte[] encryptedEmpty = new byte[chacha20poly1305.Overhead];
+		private final byte[] encryptedEmpty = new byte[ChaChaPoly1305Overhead];
+		private final Cipher chacha20;
+
+		{
+			try {
+				chacha20 = Cipher.getInstance("ChaCha20-Poly1305");
+			} catch (NoSuchAlgorithmException | NoSuchPaddingException e) {
+				throw new RuntimeException(e);
+			}
+		}
 
 		private final SymmetricKeypair keypair;
 		private final NoisePublicKey remotePublicKey, localEphemeral;
 
 		public ResponderHandshake(NoisePrivateKey localKeypair, NoisePublicKey remoteEphemeral, byte[] encryptedStatic, byte[] encryptedTimestamp) throws BadPaddingException {
 			var hash = INITIAL_HASH.clone();
-			var chainKey = INITIAL_CHAIN_KEY.clone();
+			byte[] chainKey = INITIAL_CHAIN_KEY;
 
 			NoisePrivateKey localEphemeral = NoisePrivateKey.newPrivateKey();
 			this.localEphemeral = localEphemeral.publicKey();
 
 			updateHMAC(hash, localKeypair.publicKey().data());
 			updateHMAC(hash, remoteEphemeral.data());
-			KDF1(chainKey, chainKey, remoteEphemeral.data());
+			chainKey = deriveKey(chainKey, remoteEphemeral.data());
 
 			{
 				byte[] remoteStatic = new byte[NoisePublicKey.LENGTH];
-				byte[] key = new byte[chacha20poly1305.KeySize];
 				byte[] ss = localKeypair.sharedSecret(remoteEphemeral).data();
 
-				KDF2(chainKey, key, chainKey, ss);
-				chacha20poly1305.decipher(key, ByteBuffer.wrap(encryptedStatic), ByteBuffer.wrap(remoteStatic), ZeroNonce, hash);
+				var key = new SecretKeySpec(deriveKey(chainKey, ss, 2), "ChaCha20-Poly1305");
+				chainKey = deriveKey(chainKey, ss, 1);
+
+				try {
+					chacha20.init(Cipher.DECRYPT_MODE, key, new IvParameterSpec(ZeroNonce));
+
+					chacha20.updateAAD(hash);
+					chacha20.doFinal(encryptedStatic, 0, encryptedStatic.length, remoteStatic);
+				} catch (ShortBufferException | InvalidKeyException | InvalidAlgorithmParameterException e) {
+					throw new IllegalArgumentException(e);
+				} catch (IllegalBlockSizeException e) {
+					throw new Error("unexpected error (we're using a stream cipher)", e);
+				}
 				updateHMAC(hash, encryptedStatic);
 
 				// verify identity
 				remotePublicKey = new NoisePublicKey(remoteStatic);
 				var staticStatic = localKeypair.sharedSecret(remotePublicKey);
-				KDF2(chainKey, key, chainKey, staticStatic.data());
+				chainKey = deriveKey(chainKey, staticStatic.data());
 				updateHMAC(hash, encryptedTimestamp);
 			}
 
-			 {
+			{
 				// create ephemeral key
 				updateHMAC(hash, localEphemeral.publicKey().data());
-				KDF1(chainKey, chainKey, localEphemeral.publicKey().data());
+				chainKey = deriveKey(chainKey, localEphemeral.publicKey().data());
 
-				KDF1(chainKey, chainKey, localEphemeral.sharedSecret(remoteEphemeral).data());
-				KDF1(chainKey, chainKey, localEphemeral.sharedSecret(remotePublicKey).data());
+				chainKey = deriveKey(chainKey, localEphemeral.sharedSecret(remoteEphemeral).data());
+				chainKey = deriveKey(chainKey, localEphemeral.sharedSecret(remotePublicKey).data());
 
 				// add preshared key
-				byte[] tau = new byte[BLAKE2S_SIZE_256];
-				byte[] key = new byte[chacha20poly1305.KeySize];
-
 				NoisePresharedKey presharedKey = new NoisePresharedKey(new byte[NoisePresharedKey.LENGTH]);
-				KDF3(chainKey, tau, key, chainKey, presharedKey.data());
+
+				var tau = deriveKey(chainKey, presharedKey.data(), 2);
+				var key = new SecretKeySpec(deriveKey(chainKey, presharedKey.data(), 3), "ChaCha20-Poly1305");
+				chainKey = deriveKey(chainKey, tau, 1);
 
 				updateHMAC(hash, tau);
 
-				chacha20poly1305.cipher(key, ByteBuffer.allocate(0), ByteBuffer.wrap(encryptedEmpty), ZeroNonce, hash);
+				try {
+					chacha20.init(Cipher.ENCRYPT_MODE, key, new IvParameterSpec(ZeroNonce));
+					chacha20.updateAAD(hash);
+					chacha20.doFinal(encryptedEmpty, 0);
+				} catch (
+					ShortBufferException |
+					IllegalBlockSizeException |
+					BadPaddingException |
+					InvalidAlgorithmParameterException |
+					InvalidKeyException e
+				) {
+					throw new RuntimeException(e);
+				}
 				updateHMAC(hash, encryptedEmpty);
 
-				byte[] sendKey = new byte[chacha20poly1305.KeySize];
-				byte[] receiveKey = new byte[chacha20poly1305.KeySize];
-
-				KDF2(receiveKey, sendKey, chainKey, new byte[0]);
+				var sendKey = new SecretKeySpec(deriveKey(chainKey, new byte[0], 2), "ChaCha20-Poly1305");
+				var receiveKey = new SecretKeySpec(deriveKey(chainKey, new byte[0], 1), "ChaCha20-Poly1305");
 
 				this.keypair = new SymmetricKeypair(sendKey, receiveKey);
 			}
 		}
+
 		public SymmetricKeypair getKeypair() {
 			return keypair;
 		}
@@ -217,6 +282,11 @@ public class Handshakes {
 			messageDigest.digest(hmac, 0, hmac.length);
 		} catch (DigestException e) {
 			throw new RuntimeException(e);
+		} finally {
+			messageDigest.reset();
 		}
+	}
+
+	private Handshakes() {
 	}
 }

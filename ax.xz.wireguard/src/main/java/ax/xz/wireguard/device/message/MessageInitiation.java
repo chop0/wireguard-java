@@ -3,7 +3,6 @@ package ax.xz.wireguard.device.message;
 import ax.xz.wireguard.noise.crypto.CookieGenerator;
 import ax.xz.wireguard.noise.crypto.Crypto;
 import ax.xz.wireguard.noise.keys.NoisePublicKey;
-import ax.xz.wireguard.noise.crypto.chacha20poly1305;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -12,7 +11,7 @@ import java.util.Objects;
 
 public final class MessageInitiation extends PooledMessage implements Message {
 	public static final int TYPE = 1;
-	public static final int LENGTH = 4 + 4 + NoisePublicKey.LENGTH + chacha20poly1305.Overhead + NoisePublicKey.LENGTH + chacha20poly1305.Overhead + Crypto.TIMESTAMP_LENGTH + chacha20poly1305.Overhead * 2;
+	public static final int LENGTH = 4 + 4 + NoisePublicKey.LENGTH + Crypto.ChaChaPoly1305Overhead + NoisePublicKey.LENGTH + Crypto.ChaChaPoly1305Overhead + Crypto.TIMESTAMP_LENGTH + Crypto.ChaChaPoly1305Overhead * 2;
 
 	MessageInitiation(ByteBuffer buffer) {
 		super(LENGTH, buffer);
@@ -26,14 +25,14 @@ public final class MessageInitiation extends PooledMessage implements Message {
 		buffer.put(ephemeral.data());
 		buffer.put(encryptedStatic);
 		buffer.put(encryptedTimestamp);
-		buffer.position(buffer.position() + chacha20poly1305.Overhead * 2); // skip macs
+		buffer.position(buffer.position() + Crypto.ChaChaPoly1305Overhead * 2); // skip macs
 		buffer.flip();
 
 		return new MessageInitiation(buffer);
 	}
 
 	public ByteBuffer getSignedBuffer(NoisePublicKey remoteStatic) {
-		var buffer = buffer().position(LENGTH - chacha20poly1305.Overhead * 2).limit(LENGTH);
+		var buffer = buffer().position(LENGTH - Crypto.ChaChaPoly1305Overhead * 2).limit(LENGTH);
 		if (buffer.remaining() < 32)
 			throw new IllegalArgumentException("Buffer needs 32 bytes remaining for the macs");
 
@@ -62,14 +61,14 @@ public final class MessageInitiation extends PooledMessage implements Message {
 	}
 
 	public byte[] encryptedStatic() {
-		byte[] encryptedStatic = new byte[NoisePublicKey.LENGTH + chacha20poly1305.Overhead];
+		byte[] encryptedStatic = new byte[NoisePublicKey.LENGTH + Crypto.ChaChaPoly1305Overhead];
 		buffer().duplicate().position(8 + NoisePublicKey.LENGTH).get(encryptedStatic);
 		return encryptedStatic;
 	}
 
 	public byte[] encryptedTimestamp() {
-		byte[] encryptedTimestamp = new byte[Crypto.TIMESTAMP_LENGTH + chacha20poly1305.Overhead];
-		buffer().duplicate().position(8 + NoisePublicKey.LENGTH + NoisePublicKey.LENGTH + chacha20poly1305.Overhead).get(encryptedTimestamp);
+		byte[] encryptedTimestamp = new byte[Crypto.TIMESTAMP_LENGTH + Crypto.ChaChaPoly1305Overhead];
+		buffer().duplicate().position(8 + NoisePublicKey.LENGTH + NoisePublicKey.LENGTH + Crypto.ChaChaPoly1305Overhead).get(encryptedTimestamp);
 		return encryptedTimestamp;
 	}
 

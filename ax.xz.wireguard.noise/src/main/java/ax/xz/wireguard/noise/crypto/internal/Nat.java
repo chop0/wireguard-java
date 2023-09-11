@@ -2,6 +2,7 @@ package ax.xz.wireguard.noise.crypto.internal;
 
 public abstract class Nat
 {
+	private Nat () {}
 	private static final long M = 0xFFFFFFFFL;
 
 	public static int caddTo(int len, int mask, int[] x, int[] z)
