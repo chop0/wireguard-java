@@ -15,15 +15,13 @@ public final class SymmetricKeypair {
 	private final SecretKey sendKey;
 	private final SecretKey receiveKey;
 
-	private final Cipher cipher;
-
-	{
+	private static final ThreadLocal<Cipher> cipher = ThreadLocal.withInitial(() -> {
 		try {
-			cipher = Cipher.getInstance("ChaCha20-Poly1305");
+			return Cipher.getInstance("ChaCha20-Poly1305");
 		} catch (NoSuchAlgorithmException | NoSuchPaddingException e) {
 			throw new RuntimeException(e);
 		}
-	}
+	});
 
 	private final AtomicLong sendCounter = new AtomicLong(0);
 
@@ -37,6 +35,7 @@ public final class SymmetricKeypair {
 		var nonceBytes = new byte[ChaChaPoly1305NonceSize];
 		ByteBuffer.wrap(nonceBytes).order(ByteOrder.LITTLE_ENDIAN).position(4).putLong(nonce);
 
+		var cipher = SymmetricKeypair.cipher.get();
 		try {
 			cipher.init(Cipher.ENCRYPT_MODE, sendKey, new IvParameterSpec(nonceBytes));
 			cipher.doFinal(src, dst);
@@ -56,17 +55,16 @@ public final class SymmetricKeypair {
 		var nonceBytes = new byte[ChaChaPoly1305NonceSize];
 		ByteBuffer.wrap(nonceBytes).order(ByteOrder.LITTLE_ENDIAN).position(4).putLong(counter);
 
-		byte[] additionalData = new byte[0];
-
+		var cipher = SymmetricKeypair.cipher.get();
 		try {
 			cipher.init(Cipher.DECRYPT_MODE, receiveKey, new IvParameterSpec(nonceBytes));
-
-			cipher.updateAAD(additionalData);
 			cipher.doFinal(src, dst);
 		} catch (ShortBufferException | InvalidKeyException | InvalidAlgorithmParameterException e) {
 			throw new IllegalArgumentException(e);
 		} catch (IllegalBlockSizeException e) {
 			throw new Error("unexpected error (we're using a stream cipher)", e);
+		} catch (AEADBadTagException e) {
+			var a = 1;
 		}
 	}
 }
