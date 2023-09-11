@@ -1,7 +1,5 @@
 package ax.xz.wireguard.noise.crypto.internal;
 
-import java.util.Random;
-
 /*
  * Modular inversion as implemented in this class is based on the paper "Fast constant-time gcd
  * computation and modular inversion" by Daniel J. Bernstein and Bo-Yin Yang.
@@ -11,22 +9,6 @@ public abstract class Mod
 {
 	private static final int M30 = 0x3FFFFFFF;
 	private static final long M32L = 0xFFFFFFFFL;
-
-	public static void checkedModOddInverse(int[] m, int[] x, int[] z)
-	{
-		if (0 == modOddInverse(m, x, z))
-		{
-			throw new ArithmeticException("Inverse does not exist.");
-		}
-	}
-
-	public static void checkedModOddInverseVar(int[] m, int[] x, int[] z)
-	{
-		if (!modOddInverseVar(m, x, z))
-		{
-			throw new ArithmeticException("Inverse does not exist.");
-		}
-	}
 
 	public static int inverse32(int d)
 	{
@@ -48,7 +30,7 @@ public abstract class Mod
 //        assert (m[0] & 1) != 0;
 //        assert m[len32 - 1] != 0;
 
-		int bits = (len32 << 5) - Integers.numberOfLeadingZeros(m[len32 - 1]);
+		int bits = (len32 << 5) - Integer.numberOfLeadingZeros(m[len32 - 1]);
 		int len30 = (bits + 29) / 30;
 
 		int[] t = new int[4];
@@ -97,7 +79,7 @@ public abstract class Mod
 //        assert (m[0] & 1) != 0;
 //        assert m[len32 - 1] != 0;
 
-		int bits = (len32 << 5) - Integers.numberOfLeadingZeros(m[len32 - 1]);
+		int bits = (len32 << 5) - Integer.numberOfLeadingZeros(m[len32 - 1]);
 		int len30 = (bits + 29) / 30;
 
 		int[] t = new int[4];
@@ -112,7 +94,7 @@ public abstract class Mod
 		encode30(bits, m, 0, M, 0);
 		System.arraycopy(M, 0, F, 0, len30);
 
-		int clzG = Integers.numberOfLeadingZeros(G[len30 - 1] | 1) - (len30 * 30 + 2 - bits);
+		int clzG = Integer.numberOfLeadingZeros(G[len30 - 1] | 1) - (len30 * 30 + 2 - bits);
 		int eta = -1 - clzG;
 		int lenDE = len30, lenFG = len30;
 		int m0Inv32 = inverse32(M[0]);
@@ -181,32 +163,6 @@ public abstract class Mod
 //        assert !Nat.gte(len32, z, m);
 
 		return true;
-	}
-
-	public static int[] random(int[] p)
-	{
-		int len = p.length;
-		Random rand = new Random();
-		int[] s = Nat.create(len);
-
-		int m = p[len - 1];
-		m |= m >>> 1;
-		m |= m >>> 2;
-		m |= m >>> 4;
-		m |= m >>> 8;
-		m |= m >>> 16;
-
-		do
-		{
-			for (int i = 0; i != len; i++)
-			{
-				s[i] = rand.nextInt();
-			}
-			s[len - 1] &= m;
-		}
-		while (Nat.gte(len, s, p));
-
-		return s;
 	}
 
 	private static int add30(int len30, int[] D, int[] M)
@@ -352,7 +308,7 @@ public abstract class Mod
 		for (;;)
 		{
 			// Use a sentinel bit to count zeros only up to i.
-			zeros = Integers.numberOfTrailingZeros(g | (-1 << i));
+			zeros = Integer.numberOfTrailingZeros(g | (-1 << i));
 
 			g >>= zeros;
 			u <<= zeros;

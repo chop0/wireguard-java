@@ -10,8 +10,6 @@ public abstract class X25519Field
 
 	private static final int[] P32 = new int[]{ 0xFFFFFFED, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
 			0xFFFFFFFF, 0x7FFFFFFF };
-	private static final int[] ROOT_NEG_ONE = new int[]{ -0x01F15F50, -0x0079362D, 0x00478C4F, 0x0035697F, 0x005E8630,
-			0x01FBD7A7, -0x00BFD9B1, -0x000F4D4B, 0x00027E0F, 0x00570649 };
 
 	protected X25519Field() {}
 
@@ -23,16 +21,6 @@ public abstract class X25519Field
 		}
 	}
 
-	public static void addOne(int[] z)
-	{
-		z[0] += 1;
-	}
-
-	public static void addOne(int[] z, int zOff)
-	{
-		z[zOff] += 1;
-	}
-
 	public static void apm(int[] x, int[] y, int[] zp, int[] zm)
 	{
 		for (int i = 0; i < SIZE; ++i)
@@ -41,22 +29,6 @@ public abstract class X25519Field
 			zp[i] = xi + yi;
 			zm[i] = xi - yi;
 		}
-	}
-
-	public static int areEqual(int[] x, int[] y)
-	{
-		int d = 0;
-		for (int i = 0; i < SIZE; ++i)
-		{
-			d |= x[i] ^ y[i];
-		}
-		d = (d >>> 1) | (d & 1);
-		return (d - 1) >> 31;
-	}
-
-	public static boolean areEqualVar(int[] x, int[] y)
-	{
-		return 0 != areEqual(x, y);
 	}
 
 	public static void carry(int[] z)
@@ -150,25 +122,11 @@ public abstract class X25519Field
 		z[9] &= M24;
 	}
 
-	public static void decode(byte[] x, int[] z)
-	{
-		decode128(x, 0, z, 0);
-		decode128(x, 16, z, 5);
-		z[9] &= M24;
-	}
-
 	public static void decode(byte[] x, int xOff, int[] z)
 	{
 		decode128(x, xOff, z, 0);
 		decode128(x, xOff + 16, z, 5);
 		z[9] &= M24;
-	}
-
-	public static void decode(byte[] x, int xOff, int[] z, int zOff)
-	{
-		decode128(x, xOff, z, zOff);
-		decode128(x, xOff + 16, z, zOff + 5);
-		z[zOff + 9] &= M24;
 	}
 
 	private static void decode128(int[] is, int off, int[] z, int zOff)
@@ -211,22 +169,10 @@ public abstract class X25519Field
 		encode128(x, 5, z, zOff + 4);
 	}
 
-	public static void encode(int[] x, byte[] z)
-	{
-		encode128(x, 0, z, 0);
-		encode128(x, 5, z, 16);
-	}
-
 	public static void encode(int[] x, byte[] z, int zOff)
 	{
 		encode128(x, 0, z, zOff);
 		encode128(x, 5, z, zOff + 16);
-	}
-
-	public static void encode(int[] x, int xOff, byte[] z, int zOff)
-	{
-		encode128(x, xOff, z, zOff);
-		encode128(x, xOff + 5, z, zOff + 16);
 	}
 
 	private static void encode128(int[] x, int xOff, int[] is, int off)
@@ -291,22 +237,6 @@ public abstract class X25519Field
 		decode(u, 0, z);
 	}
 
-	public static int isOne(int[] x)
-	{
-		int d = x[0] ^ 1;
-		for (int i = 1; i < SIZE; ++i)
-		{
-			d |= x[i];
-		}
-		d = (d >>> 1) | (d & 1);
-		return (d - 1) >> 31;
-	}
-
-	public static boolean isOneVar(int[] x)
-	{
-		return 0 != isOne(x);
-	}
-
 	public static int isZero(int[] x)
 	{
 		int d = 0;
@@ -316,11 +246,6 @@ public abstract class X25519Field
 		}
 		d = (d >>> 1) | (d & 1);
 		return (d - 1) >> 31;
-	}
-
-	public static boolean isZeroVar(int[] x)
-	{
-		return 0 != isZero(x);
 	}
 
 	public static void mul(int[] x, int y, int[] z)
@@ -532,28 +457,6 @@ public abstract class X25519Field
 		}
 	}
 
-	private static void powPm5d8(int[] x, int[] rx2, int[] rz)
-	{
-		// z = x^((p-5)/8) = x^FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFD
-		// (250 1s) (1 0s) (1 1s)
-		// Addition chain: [1] 2 3 5 10 15 25 50 75 125 [250]
-
-		int[] x2 = rx2;         sqr(x, x2);             mul(x, x2, x2);
-		int[] x3 = create();    sqr(x2, x3);            mul(x, x3, x3);
-		int[] x5 = x3;          sqr(x3, 2, x5);         mul(x2, x5, x5);
-		int[] x10 = create();   sqr(x5, 5, x10);        mul(x5, x10, x10);
-		int[] x15 = create();   sqr(x10, 5, x15);       mul(x5, x15, x15);
-		int[] x25 = x5;         sqr(x15, 10, x25);      mul(x10, x25, x25);
-		int[] x50 = x10;        sqr(x25, 25, x50);      mul(x25, x50, x50);
-		int[] x75 = x15;        sqr(x50, 25, x75);      mul(x25, x75, x75);
-		int[] x125 = x25;       sqr(x75, 50, x125);     mul(x50, x125, x125);
-		int[] x250 = x50;       sqr(x125, 125, x250);   mul(x125, x250, x250);
-
-		int[] t = x125;
-		sqr(x250, 2, t);
-		mul(t, x, rz);
-	}
-
 	private static void reduce(int[] z, int x)
 	{
 		int t = z[9], z9 = t & M24;
@@ -698,68 +601,12 @@ public abstract class X25519Field
 		z[9]     = z9 + (int)t;
 	}
 
-	public static void sqr(int[] x, int n, int[] z)
-	{
-//        assert n > 0;
-
-		sqr(x, z);
-
-		while (--n > 0)
-		{
-			sqr(z, z);
-		}
-	}
-
-	public static boolean sqrtRatioVar(int[] u, int[] v, int[] z)
-	{
-		int[] uv3 = create();
-		int[] uv7 = create();
-
-		mul(u, v, uv3);
-		sqr(v, uv7);
-		mul(uv3, uv7, uv3);
-		sqr(uv7, uv7);
-		mul(uv7, uv3, uv7);
-
-		int[] t = create();
-		int[] x = create();
-		powPm5d8(uv7, t, x);
-		mul(x, uv3, x);
-
-		int[] vx2 = create();
-		sqr(x, vx2);
-		mul(vx2, v, vx2);
-
-		sub(vx2, u, t);
-		normalize(t);
-		if (isZeroVar(t))
-		{
-			copy(x, 0, z, 0);
-			return true;
-		}
-
-		add(vx2, u, t);
-		normalize(t);
-		if (isZeroVar(t))
-		{
-			mul(x, ROOT_NEG_ONE, z);
-			return true;
-		}
-
-		return false;
-	}
-
 	public static void sub(int[] x, int[] y, int[] z)
 	{
 		for (int i = 0; i < SIZE; ++i)
 		{
 			z[i] = x[i] - y[i];
 		}
-	}
-
-	public static void subOne(int[] z)
-	{
-		z[0] -= 1;
 	}
 
 	public static void zero(int[] z)

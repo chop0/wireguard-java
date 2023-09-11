@@ -1,4 +1,4 @@
-package ax.xz.wireguard.noise.crypto;
+package ax.xz.wireguard.noise.crypto.internal;
 
 import java.security.MessageDigest;
 import java.util.Arrays;
@@ -39,7 +39,7 @@ public final class Blake2s extends MessageDigest {
 
 	private final int digestLength;
 	private final byte[] buffer;
-	private byte[] key;
+	private final byte[] key;
 	private int[] h; // internal state
 	private int t0; // counter's LSB
 	private int t1; // counter's MSB
@@ -83,27 +83,8 @@ public final class Blake2s extends MessageDigest {
 		reset();
 	}
 
-	private Blake2s(Blake2s digest) {
-		super(algorithm());
-		this.c = digest.c;
-		this.buffer = Arrays.copyOf(digest.buffer, digest.buffer.length);
-		this.key = Arrays.copyOf(digest.key, digest.key.length);
-		this.digestLength = digest.digestLength;
-		this.h = Arrays.copyOf(digest.h, digest.h.length);
-		this.t0 = digest.t0;
-		this.t1 = digest.t1;
-	}
-
 	public static String algorithm() {
 		return "BLAKE2s";
-	}
-
-	public int length() {
-		return digestLength;
-	}
-
-	public Blake2s copy() {
-		return new Blake2s(this);
 	}
 
 	public void engineReset() {
@@ -120,23 +101,11 @@ public final class Blake2s extends MessageDigest {
 		}
 	}
 
-	public Blake2s burn() {
-		Arrays.fill(key, (byte) 0);
-		Arrays.fill(buffer, (byte) 0); // buffer may contain the key...
-		key = new byte[0];
-		reset();
-		return this;
-	}
-
 	public void engineUpdate(byte input) {
 		if (c == BLOCK_LENGTH) {
 			processBuffer(false);
 		}
 		buffer[c++] = input;
-	}
-
-	public void engineUpdate(byte... input) {
-		engineUpdate(input, 0, input.length);
 	}
 
 	public void engineUpdate(byte[] input, int off, int len) {
@@ -258,63 +227,6 @@ public final class Blake2s extends MessageDigest {
 		out[off + 3] = (byte) (n >>> 24);
 	}
 
-	/**
-	 * Encodes the given {@code long} value using little-endian byte
-	 * ordering convention.
-	 *
-	 * @param n the {@code long} value to encode.
-	 *
-	 * @return the encoded value.
-	 */
-	static byte[] encode(long n)
-	{
-		byte[] out = new byte[8];
-		encode(n, out, 0);
-		return out;
-	}
-
-	/**
-	 * Encodes the given {@code long} value using little-endian byte
-	 * ordering convention into the given array, starting at the given
-	 * offset.
-	 *
-	 * @param n the {@code long} value to encode.
-	 * @param out the output buffer.
-	 * @param off the output offset.
-	 *
-	 * @throws NullPointerException if {@code out} is {@code null}.
-	 * @throws IndexOutOfBoundsException if {@code off} is negative or if
-	 *	{@code out}'s length is lower than {@code off + 8}.
-	 */
-	static void encode(long n, byte[] out, int off)
-	{
-		out[off] = (byte) n;
-		out[off + 1] = (byte) (n >>> 8);
-		out[off + 2] = (byte) (n >>> 16);
-		out[off + 3] = (byte) (n >>> 24);
-		out[off + 4] = (byte) (n >>> 32);
-		out[off + 5] = (byte) (n >>> 40);
-		out[off + 6] = (byte) (n >>> 48);
-		out[off + 7] = (byte) (n >>> 56);
-	}
-
-
-	/**
-	 * Decodes the first 4 bytes of the given array into an {@code int}
-	 * value using little-endian byte ordering convention.
-	 *
-	 * @param in the encoded value.
-	 *
-	 * @return the decoded {@code int} value.
-	 *
-	 * @throws NullPointerException if {@code in} is {@code null}.
-	 * @throws IndexOutOfBoundsException if {@code in}'s length is lower
-	 *	than {@code 4}.
-	 */
-	static int decodeInt(byte[] in)
-	{
-		return decodeInt(in, 0);
-	}
 
 	/**
 	 * Decodes the first 4 bytes starting at {@code off} of the given array
@@ -336,48 +248,5 @@ public final class Blake2s extends MessageDigest {
 			   | ((in[off + 1] & 0xFF) << 8)
 			   | ((in[off + 2] & 0xFF) << 16)
 			   | ((in[off + 3] & 0xFF) << 24);
-	}
-
-	/**
-	 * Decodes the first 8 bytes of the given array into a {@code long}
-	 * value using little-endian byte ordering convention.
-	 *
-	 * @param in the encoded value.
-	 *
-	 * @return the decoded {@code long} value.
-	 *
-	 * @throws NullPointerException if {@code in} is {@code null}.
-	 * @throws IndexOutOfBoundsException if {@code in}'s length is lower
-	 *	than {@code 8}.
-	 */
-	static long decodeLong(byte[] in)
-	{
-		return decodeLong(in, 0);
-	}
-
-	/**
-	 * Decodes the first 8 bytes starting at {@code off} of the given array
-	 * into a {@code long} value using little-endian byte ordering
-	 * convention.
-	 *
-	 * @param in the encoded value.
-	 * @param off the input offset.
-	 *
-	 * @return the decoded {@code long} value.
-	 *
-	 * @throws NullPointerException if {@code in} is {@code null}.
-	 * @throws IndexOutOfBoundsException if {@code off} is negative or if
-	 *	{@code in}'s length is lower than {@code off + 8}.
-	 */
-	static long decodeLong(byte[] in, int off)
-	{
-		return (long) (in[off] & 0xFF)
-			   | ((long) (in[off + 1] & 0xFF) << 8)
-			   | ((long) (in[off + 2] & 0xFF) << 16)
-			   | ((long) (in[off + 3] & 0xFF) << 24)
-			   | ((long) (in[off + 4] & 0xFF) << 32)
-			   | ((long) (in[off + 5] & 0xFF) << 40)
-			   | ((long) (in[off + 6] & 0xFF) << 48)
-			   | ((long) (in[off + 7] & 0xFF) << 56);
 	}
 }

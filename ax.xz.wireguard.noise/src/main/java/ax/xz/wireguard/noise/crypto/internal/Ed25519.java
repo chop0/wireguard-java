@@ -1,6 +1,11 @@
 package ax.xz.wireguard.noise.crypto.internal;
 
 
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+
+import static java.nio.ByteOrder.LITTLE_ENDIAN;
+
 /**
  * A low-level implementation of the Ed25519, Ed25519ctx, and Ed25519ph instantiations of the Edwards-Curve
  * Digital Signature Algorithm specified in <a href="https://www.rfc-editor.org/rfc/rfc8032">RFC 8032</a>.
@@ -14,15 +19,19 @@ package ax.xz.wireguard.noise.crypto.internal;
  */
 public abstract class Ed25519
 {
-	// -x^2 + y^2 == 1 + 0x52036CEE2B6FFE738CC740797779E89800700A4D4141D8AB75EB4DCA135978A3 * x^2 * y^2
-	public static final class PublicPoint
-	{
-		final int[] data;
+	static final int SIZE = 8;
+	private static final int[] L = new int[]{ 0x5CF5D3ED, 0x5812631A, 0xA2F79CD6, 0x14DEF9DE, 0x00000000, 0x00000000,
+			0x00000000, 0x10000000 };
 
-		PublicPoint(int[] data)
-		{
-			this.data = data;
-		}
+	static void toSignedDigits(int[] z)
+	{
+//        assert bits == 256;
+//        assert z.length >= SIZE;
+
+//        int c1 =
+		Nat.caddTo(SIZE, ~z[0] & 1, L, z);     //assert c1 == 0;
+//        int c2 =
+		Nat.shiftDownBit(SIZE, z, 1);           //assert c2 == (1 << 31);
 	}
 
 	private static class F extends X25519Field {};
@@ -502,8 +511,8 @@ public abstract class Ed25519
 		precompute();
 
 		int[] n = new int[SCALAR_INTS];
-		Scalar25519.decode(k, n);
-		Scalar25519.toSignedDigits(PRECOMP_RANGE, n);
+		ByteBuffer.wrap(k).order(LITTLE_ENDIAN).asIntBuffer().get(n);
+		toSignedDigits(n);
 		groupCombBits(n);
 
 		PointPrecomp p = new PointPrecomp();

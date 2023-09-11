@@ -46,7 +46,7 @@ class HandshakeResponder {
 		return new HandshakeResponder(device, initiation, keepaliveInterval, remoteAddress, localIndex).getSession();
 	}
 
-	public EstablishedSession getSession() throws IOException {
+	public EstablishedSession getSession() {
 		return session;
 	}
 }

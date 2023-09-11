@@ -1,12 +1,10 @@
 package ax.xz.wireguard.noise.handshake;
 
-import ax.xz.wireguard.noise.crypto.Blake2s;
+import ax.xz.wireguard.noise.crypto.chacha20poly1305;
+import ax.xz.wireguard.noise.crypto.internal.Blake2s;
 import ax.xz.wireguard.noise.keys.NoisePresharedKey;
 import ax.xz.wireguard.noise.keys.NoisePrivateKey;
 import ax.xz.wireguard.noise.keys.NoisePublicKey;
-import ax.xz.wireguard.noise.crypto.chacha20poly1305;
-import static java.lang.System.Logger;
-import static java.lang.System.Logger.Level.*;
 
 import javax.crypto.BadPaddingException;
 import java.nio.ByteBuffer;
@@ -15,6 +13,8 @@ import java.security.DigestException;
 import java.security.MessageDigest;
 
 import static ax.xz.wireguard.noise.crypto.Crypto.*;
+import static java.lang.System.Logger;
+import static java.lang.System.Logger.Level.DEBUG;
 
 public class Handshakes {
 	private static final byte[] ZeroNonce = new byte[chacha20poly1305.NonceSize];

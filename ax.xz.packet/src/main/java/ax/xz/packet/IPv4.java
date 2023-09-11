@@ -4,6 +4,7 @@ import java.net.Inet4Address;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.concurrent.ThreadLocalRandom;
 
 public record IPv4(short dscp, byte ecn, short identification, byte flags, short fragmentOffset, byte ttl, Inet4Address source, Inet4Address destination, L4Packet payload) implements L3Packet {
 	public IPv4 {
@@ -76,7 +77,7 @@ public record IPv4(short dscp, byte ecn, short identification, byte flags, short
 	}
 
 	public static IPv4 of(Inet4Address source, Inet4Address destination, L4Packet payload) {
-		return new IPv4((byte) 0, (byte)0, (byte) 0, (byte)1, (byte) 0, (byte) 64, source, destination, payload);
+		return new IPv4((byte) 0, (byte)0, (byte) ThreadLocalRandom.current().nextInt(), (byte)0, (byte) 0, (byte) 64, source, destination, payload);
 	}
 
 	public static IPv4 parse(ByteBuffer buf) {

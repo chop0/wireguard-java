@@ -43,6 +43,15 @@ public class IpTunInterfaceConfigurer implements TunInterfaceConfigurer {
 	}
 
 	@Override
+	public void up(String ifName) throws IOException {
+		try {
+			TunInterfaceConfigurer.runCommand("ip", "link", "set", "dev", ifName, "up");
+		} catch (InterruptedException e) {
+			throw new IOException(e);
+		}
+	}
+
+	@Override
 	public Set<Tun.Subnet> subnets(String ifName) throws IOException {
 		try {
 			return TunInterfaceConfigurer.runCommand("ip", "address", "show", "dev", ifName).lines()

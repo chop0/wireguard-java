@@ -7,7 +7,6 @@ import java.nio.ByteBuffer;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
-import java.security.NoSuchProviderException;
 
 public class chacha20poly1305 {
 	public static final int KeySize = 32;
@@ -16,17 +15,17 @@ public class chacha20poly1305 {
 
 	private chacha20poly1305() {}
 
-	interface CipherHolder {
-		ThreadLocal<Cipher> holder = ThreadLocal.withInitial(() -> {
-			try {
-				return Cipher.getInstance("ChaCha20-Poly1305");
-			} catch (NoSuchAlgorithmException | NoSuchPaddingException e) {
-				throw new RuntimeException(e);
-			}
-		});
-	}
-
 	private static Cipher getCipher() {
+		interface CipherHolder {
+			ThreadLocal<Cipher> holder = ThreadLocal.withInitial(() -> {
+				try {
+					return Cipher.getInstance("ChaCha20-Poly1305");
+				} catch (NoSuchAlgorithmException | NoSuchPaddingException e) {
+					throw new RuntimeException(e);
+				}
+			});
+		}
+
 		return CipherHolder.holder.get();
 	}
 

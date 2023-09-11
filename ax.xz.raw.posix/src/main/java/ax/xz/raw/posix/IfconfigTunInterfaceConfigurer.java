@@ -15,21 +15,14 @@ import static ax.xz.raw.spi.Tun.Subnet.convertNetmaskToCIDR;
  * Adds and removes subnets from an interface using the ip command.
  */
 public class IfconfigTunInterfaceConfigurer implements TunInterfaceConfigurer {
-	private String[] ifconfigSubnetModificationCommand(Tun.Subnet subnet, String deviceName, String action) {
-		return new String[]{
-			"ifconfig",
-			deviceName,
-			subnet.isIPv4() ? "inet" : "inet6",
-			subnet.toCIDRString(),
-			subnet.address().getHostAddress(),
-			action
-		};
-	}
 
 	@Override
 	public void addSubnet(String ifName, Tun.Subnet subnet) throws IOException {
 		try {
-			TunInterfaceConfigurer.runCommand(ifconfigSubnetModificationCommand(subnet, ifName, "alias"));
+			if (subnet.isIPv4())
+				TunInterfaceConfigurer.runCommand("ifconfig", ifName, "inet", subnet.toCIDRString(), subnet.address().getHostAddress(), "alias");
+			else
+				TunInterfaceConfigurer.runCommand("ifconfig", ifName, "inet6", "add", subnet.toCIDRString());
 		} catch (InterruptedException e) {
 			throw new RuntimeException(e);
 		}
@@ -38,9 +31,21 @@ public class IfconfigTunInterfaceConfigurer implements TunInterfaceConfigurer {
 	@Override
 	public void removeSubnet(String ifName, Tun.Subnet subnet) throws IOException {
 		try {
-			TunInterfaceConfigurer.runCommand(ifconfigSubnetModificationCommand(subnet, ifName, "-alias"));
+			if (subnet.isIPv4())
+				TunInterfaceConfigurer.runCommand("ifconfig", ifName, "inet", subnet.toCIDRString(), subnet.address().getHostAddress(), "-alias");
+			else
+				TunInterfaceConfigurer.runCommand("ifconfig", ifName, "inet6", "delete", subnet.address().getHostAddress());
 		} catch (InterruptedException e) {
 			throw new RuntimeException(e);
+		}
+	}
+
+	@Override
+	public void up(String ifName) throws IOException {
+		try {
+			TunInterfaceConfigurer.runCommand("ifconfig", ifName, "up");
+		} catch (InterruptedException e) {
+			throw new IOException(e);
 		}
 	}
 

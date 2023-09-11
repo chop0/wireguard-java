@@ -1,5 +1,7 @@
 package ax.xz.wireguard.noise.crypto;
 
+import ax.xz.wireguard.noise.crypto.internal.Blake2s;
+
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 

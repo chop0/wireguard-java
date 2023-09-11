@@ -4,7 +4,7 @@
     <module name="ax.xz.wireguard" />
     <option name="PROGRAM_PARAMETERS" value="$PROJECT_DIR$/wgcf-profile.conf" />
     <target name="root@localhost:22" />
-    <option name="VM_PARAMETERS" value="--enable-preview --enable-native-access=ax.xz.raw.posix -Djava.library.path=$PROJECT_DIR$/ax.xz.raw.posix -Dlogback.configurationFile=$PROJECT_DIR$/config/logback.xml" />
+    <option name="VM_PARAMETERS" value="--enable-preview --enable-native-access=ax.xz.raw.posix -Djava.library.path=$PROJECT_DIR$/build" />
     <extension name="coverage">
       <pattern>
         <option name="PATTERN" value="ax.xz.wireguard.cli.*" />

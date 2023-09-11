@@ -12,6 +12,7 @@ public interface TunInterfaceConfigurer {
 
 	void addSubnet(String ifName, Tun.Subnet subnet) throws IOException;
 	void removeSubnet(String ifName, Tun.Subnet subnet) throws IOException;
+	void up(String ifName) throws IOException;
 	Set<Tun.Subnet> subnets(String ifName) throws IOException;
 
 	static String runCommand(String... command) throws IOException, InterruptedException {

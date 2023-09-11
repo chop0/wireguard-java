@@ -71,31 +71,31 @@ public class TunTest {
 	@Test
 	public void testAddRemoveSubnet() throws IOException {
 		try (var tun = new POSIXTunProvider().open()) {
-			tun.addSubnet(new Tun.Subnet(LOCALHOST4, 24));
-			tun.addSubnet(new Tun.Subnet(LOCALHOST6, 64));
+			tun.addSubnet(new Tun.Subnet(TEST_ADDRESS4, 24));
+			tun.addSubnet(new Tun.Subnet(TEST_ADDRESS6, 64));
 
-			assertTrue(tun.subnets().contains(new Tun.Subnet(LOCALHOST4, 24)), "Tun should have ipv4 subnet");
-			assertTrue(tun.subnets().contains(new Tun.Subnet(LOCALHOST6, 64)), "Tun should have ipv6 subnet");
+			assertTrue(tun.subnets().contains(new Tun.Subnet(TEST_ADDRESS4, 24)), "Tun should have ipv4 subnet");
+			assertTrue(tun.subnets().contains(new Tun.Subnet(TEST_ADDRESS6, 64)), "Tun should have ipv6 subnet");
 
-			tun.removeSubnet(new Tun.Subnet(LOCALHOST6, 64));
-			assertFalse(tun.subnets().contains(new Tun.Subnet(LOCALHOST6, 64)), "Tun should not have ipv6 subnet");
-			assertTrue(tun.subnets().contains(new Tun.Subnet(LOCALHOST4, 24)), "Tun should still have ipv4 subnet");
+			tun.removeSubnet(new Tun.Subnet(TEST_ADDRESS6, 64));
+			assertFalse(tun.subnets().contains(new Tun.Subnet(TEST_ADDRESS6, 64)), "Tun should not have ipv6 subnet");
+			assertTrue(tun.subnets().contains(new Tun.Subnet(TEST_ADDRESS4, 24)), "Tun should still have ipv4 subnet");
 
-			tun.removeSubnet(new Tun.Subnet(LOCALHOST4, 24));
-			assertFalse(tun.subnets().contains(new Tun.Subnet(LOCALHOST4, 24)), "Tun should not have ipv4 subnet");
+			tun.removeSubnet(new Tun.Subnet(TEST_ADDRESS4, 24));
+			assertFalse(tun.subnets().contains(new Tun.Subnet(TEST_ADDRESS4, 24)), "Tun should not have ipv4 subnet");
 
-			tun.addSubnet(new Tun.Subnet(LOCALHOST4, 24));
-			tun.addSubnet(new Tun.Subnet(LOCALHOST6, 64));
+			tun.addSubnet(new Tun.Subnet(TEST_ADDRESS4, 24));
+			tun.addSubnet(new Tun.Subnet(TEST_ADDRESS6, 64));
 
-			assertTrue(tun.subnets().contains(new Tun.Subnet(LOCALHOST4, 24)), "Tun should have ipv4 subnet");
-			assertTrue(tun.subnets().contains(new Tun.Subnet(LOCALHOST6, 64)), "Tun should have ipv6 subnet");
+			assertTrue(tun.subnets().contains(new Tun.Subnet(TEST_ADDRESS4, 24)), "Tun should have ipv4 subnet");
+			assertTrue(tun.subnets().contains(new Tun.Subnet(TEST_ADDRESS6, 64)), "Tun should have ipv6 subnet");
 
-			tun.removeSubnet(new Tun.Subnet(LOCALHOST4, 24));
-			assertFalse(tun.subnets().contains(new Tun.Subnet(LOCALHOST4, 24)), "Tun should not have ipv4 subnet");
-			assertTrue(tun.subnets().contains(new Tun.Subnet(LOCALHOST6, 64)), "Tun should still have ipv6 subnet");
+			tun.removeSubnet(new Tun.Subnet(TEST_ADDRESS4, 24));
+			assertFalse(tun.subnets().contains(new Tun.Subnet(TEST_ADDRESS4, 24)), "Tun should not have ipv4 subnet");
+			assertTrue(tun.subnets().contains(new Tun.Subnet(TEST_ADDRESS6, 64)), "Tun should still have ipv6 subnet");
 
-			tun.removeSubnet(new Tun.Subnet(LOCALHOST6, 64));
-			assertFalse(tun.subnets().contains(new Tun.Subnet(LOCALHOST6, 64)), "Tun should not have ipv6 subnet");
+			tun.removeSubnet(new Tun.Subnet(TEST_ADDRESS6, 64));
+			assertFalse(tun.subnets().contains(new Tun.Subnet(TEST_ADDRESS6, 64)), "Tun should not have ipv6 subnet");
 		}
 	}
 
@@ -103,8 +103,8 @@ public class TunTest {
 	@Test
 	public void testRead6() throws IOException {
 		var packetContents = "Hello, world!";
-		var javaSocketAddress = new InetSocketAddress(LOCALHOST6, 1234);
-		var rawSocketAddress = new InetSocketAddress(TEST_ADDRESS6, 1234);
+		var javaSocketAddress = new InetSocketAddress(LOCALHOST6, 1111);
+		var rawSocketAddress = new InetSocketAddress(TEST_ADDRESS6, 2222);
 
 		try (var datagramListener = DatagramChannel.open(StandardProtocolFamily.INET6); var tun = new POSIXTunProvider().open()) {
 			tun.addAddress(rawSocketAddress.getAddress());
@@ -149,7 +149,7 @@ public class TunTest {
 	@Test
 	public void testRead4() throws IOException {
 		var packetContents = "Hello, world!";
-		var rawSocketAddress = new InetSocketAddress(TEST_ADDRESS4, 1234);
+		var rawSocketAddress = new InetSocketAddress(TEST_ADDRESS4, 2347);
 
 		try (var datagramListener = DatagramChannel.open(StandardProtocolFamily.INET); var tun = new POSIXTunProvider().open()) {
 			tun.addAddress(rawSocketAddress.getAddress());
@@ -189,8 +189,8 @@ public class TunTest {
 	@Test
 	public void testWrite6() throws IOException {
 		var packetContents = "Hello, world!";
-		var javaSocketAddress = new InetSocketAddress(LOCALHOST6, 1234);
-		var rawSocketAddress = new InetSocketAddress(TEST_ADDRESS6, 1234);
+		var javaSocketAddress = new InetSocketAddress(LOCALHOST6, 3333);
+		var rawSocketAddress = new InetSocketAddress(TEST_ADDRESS6, 4444);
 
 		try (var datagramListener = DatagramChannel.open(StandardProtocolFamily.INET6); var tun = new POSIXTunProvider().open()) {
 			tun.addAddress(rawSocketAddress.getAddress());
@@ -216,19 +216,19 @@ public class TunTest {
 
 	@DisplayName("Should be able to send a UDP datagram over IPv4")
 	@Test
-	public void testWrite4() throws IOException, InterruptedException {
+	public void testWrite4() throws IOException {
 		var packetContents = "Hello, world!";
 		var javaSocketAddress = new InetSocketAddress(LOCALHOST4, 1234);
 		var rawSocketAddress = new InetSocketAddress(TEST_ADDRESS4, 1234);
 
 		try (var datagramListener = DatagramChannel.open(StandardProtocolFamily.INET); var tun = new POSIXTunProvider().open()) {
+			tun.addAddress(rawSocketAddress.getAddress());
 			datagramListener.bind(javaSocketAddress);
 
 			var payload = UDP.datagram(rawSocketAddress.getPort(), javaSocketAddress.getPort(), packetContents.getBytes(StandardCharsets.UTF_8));
 			var packet = IPv4.of((Inet4Address) rawSocketAddress.getAddress(), (Inet4Address) javaSocketAddress.getAddress(), payload);
 
 			var buf = ByteBuffer.allocate(1500);
-
 			packet.write(buf);
 			buf.flip();
 			tun.write(buf);
@@ -240,5 +240,14 @@ public class TunTest {
 			assertEquals(buf.remaining(), packetContents.length(), "Payload length should match");
 			assertEquals(packetContents, StandardCharsets.UTF_8.decode(buf).toString(), "Payload contents should match");
 		}
+	}
+
+	private static void printHex(ByteBuffer buf) {
+		buf = buf.duplicate();
+		var sb = new StringBuilder();
+		for (int i = 0; i < buf.remaining(); i++) {
+			sb.append(String.format("%02x ", buf.get(i)));
+		}
+		System.out.println(sb.toString());
 	}
 }
