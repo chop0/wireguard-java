@@ -15,6 +15,7 @@ fi
 
 OLD_GW=$(ip route show | grep default | cut -d' ' -f 3)
 ip link set dev tun0 up
+# delete docker internal route
 ip route add 10.0.0.0/24 dev tun0
 iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
 

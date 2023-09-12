@@ -150,12 +150,7 @@ final class SessionManager {
 
 	@GuardedBy("lock")
 	private void attemptSessionRecoveryIfRequired() throws InterruptedException {
-		if (!(session == null || session.isExpired())) {
-			return;
-		}
-
-		if (connectionInfo.endpoint() == null) {
-			logger.log(WARNING, "No endpoint set;  waiting for remote handshake initiation");
+		if (connectionInfo.endpoint() == null || !(session == null || session.isExpired())) {
 			return;
 		}
 

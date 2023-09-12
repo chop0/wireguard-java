@@ -13,6 +13,17 @@ services:
             - wireguard-network
         devices:
             - /dev/net/tun:/dev/net/tun
+
+    iperf3-server:
+        image: networkstatic/iperf3
+        command: -s
+        restart: unless-stopped
+        depends_on:
+            - wireguard-server
+        networks:
+            - wireguard-network
+
+
     wireguard-client:
         build: .
         volumes:
@@ -25,6 +36,15 @@ services:
             - wireguard-network
         devices:
             - /dev/net/tun:/dev/net/tun
+
+    wireguard-client-iperf3:
+        image: networkstatic/iperf3
+        command: -c iperf3-server
+        restart: unless-stopped
+        network_mode: "service:wireguard-client"
+        depends_on:
+            - wireguard-client
+            - iperf3-server
 
 
 networks:
