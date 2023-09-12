@@ -9,8 +9,7 @@ import java.nio.ByteOrder;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 
 import static java.lang.System.Logger;
-import static java.lang.System.Logger.Level.DEBUG;
-import static java.lang.System.Logger.Level.WARNING;
+import static java.lang.System.Logger.Level.*;
 
 public class TunnelDeviceBond {
 	private static final Logger logger = System.getLogger(TunnelDeviceBond.class.getName());
@@ -61,7 +60,7 @@ public class TunnelDeviceBond {
 			});
 
 			try (var sch = new ScheduledThreadPoolExecutor(0, Thread.ofVirtual().factory())) {
-				sch.scheduleAtFixedRate(() -> logger.log(DEBUG, device.getStats().toString()), 0, 1, java.util.concurrent.TimeUnit.SECONDS);
+				sch.scheduleAtFixedRate(() -> logger.log(INFO, device.getStats().toString()), 0, 10, java.util.concurrent.TimeUnit.SECONDS);
 
 				sts.join();
 			}
