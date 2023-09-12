@@ -31,7 +31,7 @@ class StressTest {
 
 				executor.submit(() -> {
 					try {
-						var buf = ByteBuffer.allocateDirect(a.physicalLayerMTU());
+						var buf = ByteBuffer.allocateDirect(a.receiveBufferSize());
 
 						while (!Thread.interrupted()) {
 							buf.clear();
@@ -62,7 +62,7 @@ class StressTest {
 
 				executor.submit(() -> {
 					try {
-						var buf = ByteBuffer.allocateDirect(b.physicalLayerMTU());
+						var buf = ByteBuffer.allocateDirect(b.receiveBufferSize());
 
 						while (!Thread.interrupted()) {
 							buf.clear();

@@ -21,13 +21,9 @@ public class TunnelDeviceBond {
 	public TunnelDeviceBond(WireguardDevice device, Tun tunnel) throws IOException {
 		this.device = device;
 		this.tunnel = tunnel;
-
-		device.setPhysicalLayerMTU(tunnel.mtu());
 	}
 
-	public void run() throws InterruptedException, IOException {
-		device.setPhysicalLayerMTU(tunnel.mtu() + 40 + 16);
-
+	public void run() throws InterruptedException {
 		try (var sts = new PersistentTaskExecutor<>("TunnelDeviceBond", RuntimeException::new, logger)) {
 			sts.fork(() -> {
 				device.run();
@@ -55,9 +51,12 @@ public class TunnelDeviceBond {
 
 			sts.fork(() -> {
 				while (!Thread.interrupted()) {
-					// write
-					var transport = device.receiveTransport().order(ByteOrder.BIG_ENDIAN);
-					tunnel.write(transport);
+					try {
+						var transport = device.receiveTransport().order(ByteOrder.BIG_ENDIAN);
+						tunnel.write(transport);
+					} catch (IOException e) {
+						logger.log(WARNING, "Error writing to tunnel", e);
+					}
 				}
 
 				return null;

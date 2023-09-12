@@ -55,7 +55,7 @@ public final class WireguardDevice implements Closeable {
 	private final AtomicLong bytesReceived = new AtomicLong(0);
 	private final AtomicLong dataSent = new AtomicLong(0);
 
-	private int physicalLayerMTU = 1420;
+	private int receiveBufferSize = 0x1000;
 
 	public WireguardDevice(NoisePrivateKey staticIdentity) {
 		this.staticIdentity = staticIdentity;
@@ -102,24 +102,9 @@ public final class WireguardDevice implements Closeable {
 	}
 
 	public void broadcastTransport(ByteBuffer data) throws InterruptedException, IOException {
-		peerListLock.lock();
-
-		try (var sts = new MultipleResultTaskScope<Integer>()) {
-			for (var peer : peers.values()) {
-				sts.fork(() -> {
-					try {
-						return peer.writeTransportPacket(data);
-					} catch (IOException e) {
-						log.log(WARNING, "Error sending transport packet", e);
-						return 0;
-					}
-				});
-			}
-
-			sts.join();
-			sts.results().forEach(dataSent::addAndGet);
-		} finally {
-			peerListLock.unlock();
+		for (var peer : peers.values()) {
+			peer.enqueueTransportPacket(data);
+			dataSent.addAndGet(data.remaining());
 		}
 	}
 
@@ -167,12 +152,12 @@ public final class WireguardDevice implements Closeable {
 		return staticIdentity;
 	}
 
-	public int physicalLayerMTU() {
-		return physicalLayerMTU;
+	public int receiveBufferSize() {
+		return receiveBufferSize;
 	}
 
-	public void setPhysicalLayerMTU(int mtu) {
-		this.physicalLayerMTU = mtu;
+	public void setReceiveBufferSize(int mtu) {
+		this.receiveBufferSize = mtu;
 	}
 
 	public void close() throws IOException {
@@ -190,6 +175,8 @@ public final class WireguardDevice implements Closeable {
 							log.log(DEBUG, "Received invalid message", e);
 						} catch (IOException e) {
 							log.log(ERROR, "Error receiving packet", e);
+							if (!datagramChannel.isOpen())
+								break;
 						}
 					}
 				});
@@ -243,7 +230,7 @@ public final class WireguardDevice implements Closeable {
 
 	private void receive() throws IOException {
 		try {
-			var buffer = ByteBuffer.allocateDirect(physicalLayerMTU).order(ByteOrder.LITTLE_ENDIAN);
+			var buffer = ByteBuffer.allocateDirect(receiveBufferSize).order(ByteOrder.LITTLE_ENDIAN);
 
 			var addr = datagramChannel.receive(buffer);
 			buffer.flip();

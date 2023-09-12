@@ -61,7 +61,7 @@ final class EstablishedSession {
 		markKeepaliveSent();
 	}
 
-	public void decryptTransportPacket(MessageTransport message, ByteBuffer dst) throws BadPaddingException, InterruptedException {
+	public void decryptTransportPacket(MessageTransport message, ByteBuffer dst) throws BadPaddingException, InterruptedException, ShortBufferException {
 		decipher(message.counter(), message.content(), dst);
 	}
 
@@ -72,7 +72,7 @@ final class EstablishedSession {
 		return keypair.cipher(src, dst);
 	}
 
-	void decipher(long counter, ByteBuffer src, ByteBuffer dst) throws BadPaddingException, InterruptedException {
+	void decipher(long counter, ByteBuffer src, ByteBuffer dst) throws BadPaddingException, InterruptedException, ShortBufferException {
 		keypair.decipher(counter, src, dst);
 	}
 

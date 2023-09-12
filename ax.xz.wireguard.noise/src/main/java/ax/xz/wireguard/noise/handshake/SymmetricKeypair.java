@@ -2,6 +2,7 @@ package ax.xz.wireguard.noise.handshake;
 
 import javax.crypto.*;
 import javax.crypto.spec.IvParameterSpec;
+import java.nio.BufferOverflowException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.security.InvalidAlgorithmParameterException;
@@ -59,7 +60,7 @@ public final class SymmetricKeypair {
 		return nonce;
 	}
 
-	private void decipher0(long counter, ByteBuffer src, ByteBuffer dst) throws BadPaddingException {
+	private void decipher0(long counter, ByteBuffer src, ByteBuffer dst) throws BadPaddingException, ShortBufferException {
 		var nonceBytes = new byte[ChaChaPoly1305NonceSize];
 		ByteBuffer.wrap(nonceBytes).order(ByteOrder.LITTLE_ENDIAN).position(4).putLong(counter);
 
@@ -76,7 +77,7 @@ public final class SymmetricKeypair {
 			throw new Error("unexpected error (we're using a stream cipher)", e);
 		} catch (AEADBadTagException ex) {
 			log.log(INFO, "counter is {0}, src.remaining() is {1}, dst.remaining() is {2}", counter, oldSrcLimit, oldDstLimit);
-			throw ex;
+			throw new ShortBufferException();
 		}
 	}
 
@@ -91,7 +92,7 @@ public final class SymmetricKeypair {
 		}
 	}
 
-	public void decipher(long counter, ByteBuffer src, ByteBuffer dst) throws BadPaddingException, InterruptedException {
+	public void decipher(long counter, ByteBuffer src, ByteBuffer dst) throws BadPaddingException, InterruptedException, ShortBufferException {
 		var task = executor.submit(() -> {
 			decipher0(counter, src, dst);
 			return null;
@@ -101,6 +102,8 @@ public final class SymmetricKeypair {
 		} catch (ExecutionException e) {
 			if (e.getCause() instanceof BadPaddingException bpe)
 				throw bpe;
+			else if (e.getCause() instanceof ShortBufferException sbe)
+				throw sbe;
 			throw new RuntimeException(e);
 		}
 	}

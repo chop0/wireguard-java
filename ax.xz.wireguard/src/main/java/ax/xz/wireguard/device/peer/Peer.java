@@ -1,6 +1,5 @@
 package ax.xz.wireguard.device.peer;
 
-import ax.xz.wireguard.util.PersistentTaskExecutor;
 import ax.xz.wireguard.device.WireguardDevice;
 import ax.xz.wireguard.device.message.Message;
 import ax.xz.wireguard.device.message.MessageInitiation;
@@ -8,8 +7,10 @@ import ax.xz.wireguard.device.message.MessageResponse;
 import ax.xz.wireguard.device.message.MessageTransport;
 import ax.xz.wireguard.noise.keys.NoisePresharedKey;
 import ax.xz.wireguard.noise.keys.NoisePublicKey;
+import ax.xz.wireguard.util.PersistentTaskExecutor;
 
 import javax.annotation.Nullable;
+import javax.crypto.ShortBufferException;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -21,8 +22,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 
 import static java.lang.System.Logger;
-import static java.lang.System.Logger.Level.DEBUG;
-import static java.lang.System.Logger.Level.WARNING;
+import static java.lang.System.Logger.Level.*;
 import static java.util.Objects.requireNonNull;
 
 public class Peer {
@@ -36,6 +36,8 @@ public class Peer {
 
 	// a queue of transport messages that have been decrypted
 	private final LinkedBlockingQueue<ByteBuffer> decryptedTransportQueue = new LinkedBlockingQueue<>();
+
+	private final LinkedBlockingQueue<ByteBuffer> outboundTransportQueue = new LinkedBlockingQueue<>();
 
 	private final PeerConnectionInfo connectionInfo;
 
@@ -61,6 +63,7 @@ public class Peer {
 			try (var sts = new PersistentTaskExecutor<>("Peer executor", Function.identity(), logger)) {
 				sts.submit("Session manager", sessionManager::run);
 				sts.submit("Decryption worker", this::decryptionWorker);
+				sts.submit("Encryption worker", this::encryptionWorker);
 
 				sts.join();
 			} catch (InterruptedException e) {
@@ -96,7 +99,13 @@ public class Peer {
 
 	private void decryptionWorker() throws InterruptedException {
 		while (!Thread.interrupted()) {
-			processMessages(awaitInboundMessages());
+			processInboundMessages(awaitInboundMessages());
+		}
+	}
+
+	private void encryptionWorker() throws InterruptedException {
+		while (!Thread.interrupted()) {
+			processOutboundMessages(awaitOutboundMessages());
 		}
 	}
 
@@ -126,7 +135,7 @@ public class Peer {
 	}
 
 	/**
-	 * Waits till at least one transport message is present in the queue.  When a message is present, drains the queue and returns a list
+	 * Waits till at least one transport message is present in the inbound queue.  When a message is present, drains the queue and returns a list
 	 * of its prior contents.
 	 *
 	 * @return A list containing all messages received since the last call
@@ -140,15 +149,56 @@ public class Peer {
 	}
 
 	/**
+	 * Waits till at least one transport message is present in the outbound queue.  When a message is present, drains the queue and returns a list
+	 * of its prior contents.
+	 *
+	 * @return A list containing all messages received since the last call
+	 * @throws InterruptedException if the thread is interrupted whilst waiting
+	 */
+	private ArrayList<ByteBuffer> awaitOutboundMessages() throws InterruptedException {
+		var messages = new ArrayList<ByteBuffer>(outboundTransportQueue.size());
+		messages.add(outboundTransportQueue.take());
+		outboundTransportQueue.drainTo(messages);
+		return messages;
+	}
+
+	/**
 	 * Decrypts all transport messages in the given list and puts them in the appropriate queue
 	 *
 	 * @param messages the messages to decrypt
 	 * @throws InterruptedException if the thread is interrupted whilst waiting
 	 */
-	private void processMessages(ArrayList<Peer.TransportWithSession> messages) throws InterruptedException {
+	private void processInboundMessages(ArrayList<Peer.TransportWithSession> messages) throws InterruptedException {
 		try (var sts = new StructuredTaskScope.ShutdownOnFailure()) {
 			for (var m : messages) {
 				sts.fork(() -> decryptAndEnqueue(m));
+			}
+
+			sts.join();
+		}
+	}
+
+	/**
+	 * Encrypts all transport messages in the given list and sends them to the peer
+	 *
+	 * @param messages the messages to encrypt
+	 * @throws InterruptedException if the thread is interrupted whilst waiting
+	 */
+	private void processOutboundMessages(ArrayList<? extends ByteBuffer> messages) throws InterruptedException {
+		try (var sts = new StructuredTaskScope.ShutdownOnFailure()) {
+			for (var m : messages) {
+				sts.fork(() -> {
+					var session = sessionManager.tryGetSessionNow();
+					if (session == null)
+						return null;
+
+					try {
+						session.sendTransportPacket(device, m);
+					} catch (IOException e) {
+						logger.log(WARNING, "Error sending transport packet", e);
+					}
+					return null;
+				});
 			}
 
 			sts.join();
@@ -162,6 +212,7 @@ public class Peer {
 	 * @return true if the message was successfully decrypted, false otherwise
 	 */
 	private boolean decryptAndEnqueue(Peer.TransportWithSession inb) {
+		int packetSize = inb.transport().content().remaining();
 		try {
 			if (inb.session() == null)
 				return false;
@@ -181,8 +232,15 @@ public class Peer {
 				decryptedTransportQueue.add(result);
 
 			return true;
+		} catch (ShortBufferException e) {
+			int minimumSize = (int) (packetSize * 1.5);
+
+			if (device.receiveBufferSize() < minimumSize) {
+				logger.log(INFO, "Growing receive buffer");
+				device.setReceiveBufferSize((int) (packetSize * 1.5));
+			}
 		} catch (Throwable e) {
-			logger.log(WARNING, "Error decrypting transport message (is the Device MTU big enough?)", e);
+			logger.log(WARNING, "Error decrypting transport message", e);
 		}
 
 		return false;
@@ -207,13 +265,8 @@ public class Peer {
 	 * @param data data to send
 	 * @throws IOException if no session is established or something is wrong with the socket
 	 */
-	public int writeTransportPacket(ByteBuffer data) throws IOException, InterruptedException {
-		var session = sessionManager.tryGetSessionNow();
-		if (session == null) {
-			return 0; // drop
-		}
-
-		return session.sendTransportPacket(device, data);
+	public void enqueueTransportPacket(ByteBuffer data) throws IOException, InterruptedException {
+		outboundTransportQueue.add(data);
 	}
 
 	record TransportWithSession(MessageTransport transport, EstablishedSession session) {

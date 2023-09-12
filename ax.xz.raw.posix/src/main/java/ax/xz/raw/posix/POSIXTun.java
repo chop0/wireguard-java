@@ -40,7 +40,6 @@ public class POSIXTun implements Tun {
 
 		this.inputChannel = new FileInputStream(fd).getChannel();
 		this.outputChannel = new FileOutputStream(fd).getChannel();
-		setMTU(1500);
 	}
 
 	@Override

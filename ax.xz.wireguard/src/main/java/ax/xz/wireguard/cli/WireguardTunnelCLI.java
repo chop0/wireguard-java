@@ -40,7 +40,6 @@ public class WireguardTunnelCLI {
 		) {
 			logger.log(DEBUG, "Opened tun device {0}", tun.toString());
 			tun.setMTU(1500);
-			device.setPhysicalLayerMTU(tun.mtu());
 
 			if (config.interfaceConfig().listenPort() != null)
 				device.bind(new InetSocketAddress(config.interfaceConfig().listenPort()));
