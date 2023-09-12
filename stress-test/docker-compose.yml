@@ -11,6 +11,8 @@ services:
         restart: unless-stopped
         networks:
             - wireguard-network
+        security_opt:
+            - seccomp:unconfined
         devices:
             - /dev/net/tun:/dev/net/tun
 
