@@ -8,9 +8,12 @@ services:
             - ./entrypoint_server.sh:/entrypoint_routing.sh
         cap_add:
             - NET_ADMIN
+            - SYS_ADMIN
         restart: unless-stopped
         networks:
             - wireguard-network
+        security_opt:
+            - seccomp:unconfined
         devices:
             - /dev/net/tun:/dev/net/tun
 
@@ -30,9 +33,12 @@ services:
             - ./entrypoint_client.sh:/entrypoint_routing.sh
         cap_add:
             - NET_ADMIN
+            - SYS_ADMIN
         restart: unless-stopped
         networks:
             - wireguard-network
+        security_opt:
+            - seccomp:unconfined
         devices:
             - /dev/net/tun:/dev/net/tun
 
