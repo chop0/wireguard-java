@@ -1,6 +1,6 @@
 #!/bin/bash
 
-/app/run.sh /wireguard.conf&
+/app/run.sh "$@"&
 JAVA_PID=$!
 
 # wait for tun0 to be created (check by doing ip addr show dev tun0 and checking the exit code) or for the java process to die

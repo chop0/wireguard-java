@@ -13,9 +13,11 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static ax.xz.wireguard.noise.crypto.Crypto.ChaChaPoly1305NonceSize;
+import static java.lang.System.Logger.Level.INFO;
 
 public final class SymmetricKeypair {
 	private static final ExecutorService executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+	private static final System.Logger log = System.getLogger(SymmetricKeypair.class.getName());
 
 	private final SecretKey sendKey;
 	private final SecretKey receiveKey;
@@ -61,6 +63,9 @@ public final class SymmetricKeypair {
 		var nonceBytes = new byte[ChaChaPoly1305NonceSize];
 		ByteBuffer.wrap(nonceBytes).order(ByteOrder.LITTLE_ENDIAN).position(4).putLong(counter);
 
+		var oldSrcLimit = src.remaining();
+		var oldDstLimit = dst.remaining();
+
 		var cipher = getCipher();
 		try {
 			cipher.init(Cipher.DECRYPT_MODE, receiveKey, new IvParameterSpec(nonceBytes));
@@ -69,6 +74,9 @@ public final class SymmetricKeypair {
 			throw new IllegalArgumentException(e);
 		} catch (IllegalBlockSizeException e) {
 			throw new Error("unexpected error (we're using a stream cipher)", e);
+		} catch (AEADBadTagException ex) {
+			log.log(INFO, "counter is {0}, src.remaining() is {1}, dst.remaining() is {2}", counter, oldSrcLimit, oldDstLimit);
+			throw ex;
 		}
 	}
 

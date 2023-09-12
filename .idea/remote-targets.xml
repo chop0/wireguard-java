@@ -41,6 +41,25 @@
           </config>
         </ContributedStateBase>
       </target>
+      <target name="wireguard-server" type="docker-compose" uuid="732d73a0-d995-4233-8d7e-82adaee8eb6f">
+        <config>
+          <option name="targetPlatform">
+            <TargetPlatform />
+          </option>
+          <option name="configurationFiles">
+            <list>
+              <option value="$PROJECT_DIR$/stress-test/docker-compose.yml" />
+            </list>
+          </option>
+          <option name="serviceName" value="wireguard-server" />
+        </config>
+        <ContributedStateBase type="JavaLanguageRuntime">
+          <config>
+            <option name="homePath" value="/usr/local/openjdk-21" />
+            <option name="javaVersionString" value="21" />
+          </config>
+        </ContributedStateBase>
+      </target>
     </targets>
   </component>
 </project>

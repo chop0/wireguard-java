@@ -10,10 +10,13 @@ import java.net.InetSocketAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-@SuppressWarnings("UseOfSystemOutOrSystemErr")
+import static java.lang.System.Logger.Level.*;
+
 public class WireguardTunnelCLI {
+	private static final System.Logger logger = System.getLogger(WireguardTunnelCLI.class.getName());
+
 	public static void printHelp(String cmdline) {
-		System.out.printf("usage: %s <file>\n", cmdline);
+		logger.log(ERROR, "usage: %s <file>\n", cmdline);
 	}
 
 	public static void main(String[] args) throws IOException, InterruptedException {
@@ -26,7 +29,7 @@ public class WireguardTunnelCLI {
 		try {
 			config = WireGuardConfigParser.parseConfig(Files.readString(Path.of(args[0])));
 		} catch (IOException e) {
-			System.err.println("Failed to read config file: " + e.getMessage());
+			logger.log(ERROR, "Failed to read config file: " + e.getMessage());
 			System.exit(1);
 			return;
 		}
@@ -35,6 +38,7 @@ public class WireguardTunnelCLI {
 				var device = new WireguardDevice(config.interfaceConfig().privateKey());
 				var tun = TunProvider.getProvider().open()
 		) {
+			logger.log(DEBUG, "Opened tun device {0}", tun.toString());
 			tun.setMTU(1500);
 			device.setPhysicalLayerMTU(tun.mtu());
 

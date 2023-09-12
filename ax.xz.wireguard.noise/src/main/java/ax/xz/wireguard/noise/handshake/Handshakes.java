@@ -227,7 +227,7 @@ public class Handshakes {
 
 				var tau = deriveKey(chainKey, presharedKey.data(), 2);
 				var key = new SecretKeySpec(deriveKey(chainKey, presharedKey.data(), 3), "ChaCha20-Poly1305");
-				chainKey = deriveKey(chainKey, tau, 1);
+				chainKey = deriveKey(chainKey, presharedKey.data(), 1);
 
 				updateHMAC(hash, tau);
 

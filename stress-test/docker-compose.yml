@@ -1,0 +1,36 @@
+version: "3.7"
+name: wireguard-stress-test
+services:
+    wireguard-server:
+        build: .
+        volumes:
+            - ./server.conf:/wireguard.conf
+        cap_add:
+            - NET_ADMIN
+        restart: unless-stopped
+        networks:
+            - wireguard-network
+        devices:
+            - /dev/net/tun:/dev/net/tun
+        entrypoint:
+            - "/app/run.sh" # don't change routing rules
+            - "-p"
+            - "/app:/usr/share/java/logback-core-1.4.9.jar:/usr/share/java/logback-classic-1.4.9.jar:/usr/share/java/slf4j-jdk-platform-logging-2.0.9.jar:/usr/share/java/slf4j-api-2.0.9.jar"
+
+    wireguard-client:
+        build: .
+        volumes:
+            - ./client.conf:/wireguard.conf
+        cap_add:
+            - NET_ADMIN
+        restart: unless-stopped
+        networks:
+            - wireguard-network
+        devices:
+            - /dev/net/tun:/dev/net/tun
+
+
+networks:
+    wireguard-network:
+        driver: overlay
+        attachable: true

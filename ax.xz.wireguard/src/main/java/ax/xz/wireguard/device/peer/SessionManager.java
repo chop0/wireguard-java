@@ -25,7 +25,7 @@ import static java.lang.System.Logger.Level.*;
 final class SessionManager {
 	private static final int HANDSHAKE_ATTEMPTS = 5;
 
-	private static final Logger logger = System.getLogger(SessionManager.class.getName());
+	private Logger logger;
 	// The lock behind which all peer state is stored
 
 	private final ReentrantLock lock = new ReentrantLock();
@@ -54,6 +54,8 @@ final class SessionManager {
 	}
 
 	public void run() {
+		logger = System.getLogger("[%s] %s".formatted(Peer.PEER.get(), SessionManager.class.getSimpleName()));
+
 		try (var executor = new PersistentTaskExecutor<>("Session workers", IOException::new, logger)) {
 			executor.submit("Session initiation thread", this::sessionInitiationThread);
 			executor.submit("Handshake responder thread", this::handshakeResponderThread);
@@ -67,7 +69,7 @@ final class SessionManager {
 			logger.log(WARNING, "Unhandled error in broken connection worker", e);
 			throw e;
 		} finally {
-			logger.log(DEBUG, "Broken connection worker shutting down");
+			logger.log(DEBUG, "Broken connection worker;  shutting down");
 			cleanup();
 		}
 	}
@@ -158,7 +160,7 @@ final class SessionManager {
 		}
 
 		for (int i = 0; i < HANDSHAKE_ATTEMPTS; i++) {
-			logger.log(INFO, "Initiating handshake (try {0} of {1})", i + 1, HANDSHAKE_ATTEMPTS);
+			logger.log(INFO, "Initiating handshake with {0} (try {1} of {2})", connectionInfo, i + 1, HANDSHAKE_ATTEMPTS);
 
 			try {
 				var initiator = HandshakeInitiator.initiate(device, connectionInfo, getNewSessionIndex());

@@ -220,13 +220,23 @@ public class Peer {
 	}
 
 	public record PeerConnectionInfo(NoisePublicKey remoteStatic, @Nullable NoisePresharedKey presharedKey,
-									 @Nullable InetSocketAddress endpoint, Duration keepaliveInterval) {
+									 @Nullable InetSocketAddress endpoint, @Nullable Duration keepaliveInterval) {
 		public PeerConnectionInfo {
 			requireNonNull(remoteStatic);
-			requireNonNull(keepaliveInterval);
+
+			if (keepaliveInterval == null)
+				keepaliveInterval = Duration.ofDays(1_000_000_000);
 
 			if (presharedKey == null)
 				presharedKey = NoisePresharedKey.zero();
+		}
+
+		@Override
+		public String toString() {
+			if (endpoint != null)
+				return endpoint.toString();
+			else
+				return remoteStatic.toString().substring(0, 8);
 		}
 	}
 }

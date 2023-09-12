@@ -122,4 +122,9 @@ public class POSIXTun implements Tun {
 	private static native int AFINET();
 
 	private static native int AFINET6();
+
+	@Override
+	public String toString() {
+		return name;
+	}
 }

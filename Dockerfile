@@ -26,4 +26,4 @@ COPY --from=build-java /build .
 COPY --from=build-native /build/libposix_raw.so .
 
 COPY ./run.sh /app/run.sh
-ENTRYPOINT ["/app/run.sh", "/wireguard.conf"]
+ENTRYPOINT ["/app/run.sh"]

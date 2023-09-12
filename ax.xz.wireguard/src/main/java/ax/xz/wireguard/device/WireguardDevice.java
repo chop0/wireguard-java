@@ -1,6 +1,5 @@
 package ax.xz.wireguard.device;
 
-import ax.xz.wireguard.util.MultipleResultTaskScope;
 import ax.xz.wireguard.device.message.Message;
 import ax.xz.wireguard.device.message.MessageInitiation;
 import ax.xz.wireguard.device.message.MessageResponse;
@@ -10,6 +9,7 @@ import ax.xz.wireguard.noise.handshake.Handshakes;
 import ax.xz.wireguard.noise.keys.NoisePresharedKey;
 import ax.xz.wireguard.noise.keys.NoisePrivateKey;
 import ax.xz.wireguard.noise.keys.NoisePublicKey;
+import ax.xz.wireguard.util.MultipleResultTaskScope;
 import ax.xz.wireguard.util.PersistentTaskExecutor;
 
 import javax.crypto.BadPaddingException;
@@ -21,7 +21,10 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.DatagramChannel;
 import java.time.Duration;
-import java.util.concurrent.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Condition;
@@ -75,6 +78,7 @@ public final class WireguardDevice implements Closeable {
 			peerCondition.signalAll();
 
 			unstartedPeers.add(newPeer);
+			log.log(DEBUG, "Registered peer {0}", newPeer);
 		} finally {
 			peerListLock.unlock();
 		}
@@ -94,6 +98,7 @@ public final class WireguardDevice implements Closeable {
 
 	public void bind(SocketAddress endpoint) throws IOException {
 		datagramChannel.bind(endpoint);
+		log.log(DEBUG, "Bound to {0}", endpoint);
 	}
 
 	public void broadcastTransport(ByteBuffer data) throws InterruptedException, IOException {
@@ -181,6 +186,8 @@ public final class WireguardDevice implements Closeable {
 					while (!Thread.interrupted()) {
 						try {
 							receive();
+						} catch (Message.InvalidMessageException e) {
+							log.log(DEBUG, "Received invalid message", e);
 						} catch (IOException e) {
 							log.log(ERROR, "Error receiving packet", e);
 						}
@@ -241,15 +248,16 @@ public final class WireguardDevice implements Closeable {
 			var addr = datagramChannel.receive(buffer);
 			buffer.flip();
 			int recv = buffer.remaining();
+			bytesReceived.addAndGet(recv);
 
 			handleMessage((InetSocketAddress) addr, Message.parse(buffer));
-			bytesReceived.addAndGet(recv);
 		} catch (BadPaddingException e) {
 			log.log(WARNING, "Received message with invalid padding");
 		}
 	}
 
 	private void handleMessage(InetSocketAddress address, Message message) throws BadPaddingException {
+		log.log(DEBUG, "Received message {0} from {1}", message, address);
 		var peer = switch (message) {
 			case MessageInitiation initiation -> createPeerFromInitiation(initiation);
 			case MessageTransport transport -> peerSessionIndices.get(transport.receiver());
