@@ -37,7 +37,7 @@ class StressTest {
 							buf.clear();
 							icmp.write(buf);
 							buf.flip();
-							a.broadcastTransport(buf);
+							a.enqueueOnAll(buf);
 						}
 					} catch (Throwable e) {
 						e.printStackTrace();
@@ -68,7 +68,7 @@ class StressTest {
 							buf.clear();
 							icmp.write(buf);
 							buf.flip();
-							b.broadcastTransport(buf);
+							b.enqueueOnAll(buf);
 						}
 					} catch (Throwable e) {
 						e.printStackTrace();

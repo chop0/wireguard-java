@@ -265,7 +265,7 @@ public class Peer {
 	 * @param data data to send
 	 * @throws IOException if no session is established or something is wrong with the socket
 	 */
-	public void enqueueTransportPacket(ByteBuffer data) throws IOException, InterruptedException {
+	public void enqueueTransportPacket(ByteBuffer data) {
 		outboundTransportQueue.add(data);
 	}
 

@@ -9,7 +9,6 @@ import ax.xz.wireguard.noise.handshake.Handshakes;
 import ax.xz.wireguard.noise.keys.NoisePresharedKey;
 import ax.xz.wireguard.noise.keys.NoisePrivateKey;
 import ax.xz.wireguard.noise.keys.NoisePublicKey;
-import ax.xz.wireguard.util.MultipleResultTaskScope;
 import ax.xz.wireguard.util.PersistentTaskExecutor;
 
 import javax.crypto.BadPaddingException;
@@ -101,11 +100,13 @@ public final class WireguardDevice implements Closeable {
 		log.log(DEBUG, "Bound to {0}", endpoint);
 	}
 
-	public void broadcastTransport(ByteBuffer data) throws InterruptedException, IOException {
+	public void enqueueOnAll(ByteBuffer data) throws IOException {
 		for (var peer : peers.values()) {
-			peer.enqueueTransportPacket(data);
-			dataSent.addAndGet(data.remaining());
+			peer.enqueueTransportPacket(data.duplicate());
 		}
+
+		dataSent.addAndGet((long) data.remaining() * peers.size());
+		data.position(data.limit());
 	}
 
 	public ByteBuffer receiveTransport() throws InterruptedException {

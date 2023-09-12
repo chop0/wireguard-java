@@ -30,16 +30,14 @@ public class TunnelDeviceBond {
 				return null;
 			});
 			sts.fork(() -> {
-				var buffer = ByteBuffer.allocateDirect(tunnel.mtu()); // reserve room for header
-
 				while (!Thread.interrupted()) {
 					try {
-						// read
-						buffer.clear();
+						var buffer = ByteBuffer.allocateDirect(tunnel.mtu()); // reserve room for header
+
 						tunnel.read(buffer);
 						buffer.flip();
 
-						device.broadcastTransport(buffer);
+						device.enqueueOnAll(buffer);
 					} catch (IOException e) {
 						logger.log(WARNING, "Error reading from tunnel", e);
 						break;
