@@ -18,6 +18,8 @@ ip link set dev tun0 up
 ip route delete default
 ip route add 0.0.0.0/0 dev tun0
 ip route add ${OLD_GW}/32 dev eth0
+
+iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
 echo "Routing all traffic through tun0"
 
 wait $JAVA_PID
