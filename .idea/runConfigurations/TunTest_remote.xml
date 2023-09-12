@@ -1,0 +1,22 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="TunTest remote" type="JUnit" factoryName="JUnit">
+    <module name="ax.xz.raw.posix" />
+    <projectPathOnTarget name="projectPathOnTarget" value="/home/alec/wireguard-java" />
+    <target name="root@xz.ax:22" />
+    <extension name="coverage">
+      <pattern>
+        <option name="PATTERN" value="ax.xz.raw.*" />
+        <option name="ENABLED" value="true" />
+      </pattern>
+    </extension>
+    <option name="PACKAGE_NAME" value="ax.xz.raw" />
+    <option name="MAIN_CLASS_NAME" value="ax.xz.raw.TunTest" />
+    <option name="METHOD_NAME" value="" />
+    <option name="TEST_OBJECT" value="class" />
+    <option name="VM_PARAMETERS" value="-ea --enable-preview --enable-native-access=ax.xz.raw.posix -Djava.library.path=build" />
+    <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

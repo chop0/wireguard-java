@@ -207,7 +207,7 @@ public class Peer {
 	 * @param data data to send
 	 * @throws IOException if no session is established or something is wrong with the socket
 	 */
-	public int writeTransportPacket(ByteBuffer data) throws IOException {
+	public int writeTransportPacket(ByteBuffer data) throws IOException, InterruptedException {
 		var session = sessionManager.tryGetSessionNow();
 		if (session == null) {
 			return 0; // drop

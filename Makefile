@@ -6,6 +6,8 @@ OUT_DIR = out/production
 MODULES = ax.xz.raw ax.xz.raw.posix ax.xz.wireguard ax.xz.wireguard.noise
 JARFILE = $(OUT_DIR)/wireguard-java.jar
 
+all: $(addprefix $(OUT_DIR)/,$(MODULES))
+
 $(OUT_DIR)/wireguard-java:$(addprefix $(OUT_DIR)/,$(MODULES))
 	$(NATIVE_IMAGE) -o $@ -march=native --no-fallback -O2 --enable-preview -cp .:$(subst $(subst ,, ),:,$^):jsr305-3.0.2.jar ax.xz.wireguard.cli.WireguardTunnelCLI
 
