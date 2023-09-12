@@ -18,6 +18,8 @@ RUN JAVA_HOME=/usr/local/openjdk-21 cmake -DCMAKE_C_FLAGS="-nostdlib -l:libc.a" 
 RUN ninja
 
 FROM build-java as runtime
+RUN --mount=type=cache,target=/var/cache/apt apt update && apt install -y iproute2
+
 RUN mkdir /app
 WORKDIR /app
 
