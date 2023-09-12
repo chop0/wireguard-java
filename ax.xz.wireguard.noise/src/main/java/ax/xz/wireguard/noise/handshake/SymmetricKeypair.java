@@ -2,7 +2,6 @@ package ax.xz.wireguard.noise.handshake;
 
 import javax.crypto.*;
 import javax.crypto.spec.IvParameterSpec;
-import java.nio.BufferOverflowException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.security.InvalidAlgorithmParameterException;

@@ -35,20 +35,15 @@ final class EstablishedSession {
 		this.keepaliveInterval = keepaliveInterval;
 	}
 
-	private final ReentrantLock cipherLock = new ReentrantLock();
-
 	public MessageTransport createTransportPacket(ByteBuffer data) throws InterruptedException {
-		cipherLock.lock();
-
 		try {
-			var ciphertext = new byte[data.remaining() + 16];
+			var ciphertext = ByteBuffer.allocateDirect(data.remaining() + 16);
 
-			long counter = cipher(data, ByteBuffer.wrap(ciphertext));
+			long counter = cipher(data, ciphertext);
+			ciphertext.flip();
 			return MessageTransport.create(remoteIndex, counter, ciphertext);
 		} catch (ShortBufferException e) {
 			throw new Error(e); // should never happen
-		} finally {
-			cipherLock.unlock();
 		}
 	}
 

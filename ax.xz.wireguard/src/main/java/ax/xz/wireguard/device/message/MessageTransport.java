@@ -35,10 +35,10 @@ public final class MessageTransport extends PooledMessage implements Message  {
 		return buffer().duplicate().position(16);
 	}
 
-	public static MessageTransport create(int receiverIndex, long counter, byte[] encryptedData) {
+	public static MessageTransport create(int receiverIndex, long counter, ByteBuffer encryptedData) {
 		Objects.requireNonNull(encryptedData);
 
-		var buffer = ByteBuffer.allocate(4 + 4 + 8 + encryptedData.length);
+		var buffer = ByteBuffer.allocate(4 + 4 + 8 + encryptedData.remaining());
 		buffer.order(ByteOrder.LITTLE_ENDIAN);
 		buffer.putInt(TYPE);
 		buffer.putInt(receiverIndex);

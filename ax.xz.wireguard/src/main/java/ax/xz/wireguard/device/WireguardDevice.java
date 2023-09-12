@@ -32,6 +32,7 @@ import java.util.concurrent.locks.ReentrantLock;
 
 import static java.lang.System.Logger;
 import static java.lang.System.Logger.Level.*;
+import static java.lang.System.in;
 
 public final class WireguardDevice implements Closeable {
 	public static final ScopedValue<WireguardDevice> CURRENT_DEVICE = ScopedValue.newInstance();
@@ -48,6 +49,9 @@ public final class WireguardDevice implements Closeable {
 
 
 	private final DatagramChannel datagramChannel;
+
+	// a list of encrypted, incoming packets waiting to be sent up the protocol stack
+	private final LinkedBlockingQueue<ByteBuffer> inboundTransportQueue = new LinkedBlockingQueue<>(1024);
 
 	private final AtomicInteger handshakeCounter = new AtomicInteger(0);
 	private final AtomicLong bytesSent = new AtomicLong(0);
@@ -110,27 +114,11 @@ public final class WireguardDevice implements Closeable {
 	}
 
 	public ByteBuffer receiveTransport() throws InterruptedException {
-		try (var sts = new StructuredTaskScope.ShutdownOnSuccess<ByteBuffer>()) {
-			peerListLock.lock();
-
-			try {
-				while (peers.isEmpty()) {
-					peerCondition.await();
-				}
-				peers.forEachValue(1, peer -> sts.fork(peer::readTransportPacket));
-			} finally {
-				peerListLock.unlock();
-			}
-
-			sts.join();
-			return sts.result();
-		} catch (ExecutionException e) {
-			throw new Error(e);
-		}
+		return inboundTransportQueue.take();
 	}
 
 	public void addPeer(NoisePublicKey publicKey, NoisePresharedKey noisePresharedKey, Duration keepaliveInterval, InetSocketAddress endpoint) {
-		var newPeer = new Peer(this, new Peer.PeerConnectionInfo(publicKey, noisePresharedKey, endpoint, keepaliveInterval));
+		var newPeer = new Peer(this, inboundTransportQueue, new Peer.PeerConnectionInfo(publicKey, noisePresharedKey, endpoint, keepaliveInterval));
 		registerPeer(newPeer);
 	}
 
@@ -269,7 +257,7 @@ public final class WireguardDevice implements Closeable {
 			return peers.get(remoteStatic);
 
 		NoisePresharedKey presharedKey = new NoisePresharedKey(new byte[NoisePresharedKey.LENGTH]);
-		var newPeer = new Peer(this, new Peer.PeerConnectionInfo(remoteStatic, presharedKey, null, Duration.ofSeconds(30)));
+		var newPeer = new Peer(this, inboundTransportQueue, new Peer.PeerConnectionInfo(remoteStatic, presharedKey, null, Duration.ofSeconds(30)));
 		registerPeer(newPeer);
 
 		return newPeer;
