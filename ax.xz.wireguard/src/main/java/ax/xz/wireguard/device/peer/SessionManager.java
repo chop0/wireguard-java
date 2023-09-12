@@ -183,7 +183,7 @@ final class SessionManager {
 	}
 
 	@GuardedBy("lock")
-	private void sendKeepaliveIfNeeded() {
+	private void sendKeepaliveIfNeeded() throws InterruptedException {
 		if (session != null && session.needsKeepalive()) {
 			try {
 				session.sendKeepalive(device);

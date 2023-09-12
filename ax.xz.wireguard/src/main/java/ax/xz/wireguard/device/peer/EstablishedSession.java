@@ -37,7 +37,7 @@ final class EstablishedSession {
 
 	private final ReentrantLock cipherLock = new ReentrantLock();
 
-	public MessageTransport createTransportPacket(ByteBuffer data) {
+	public MessageTransport createTransportPacket(ByteBuffer data) throws InterruptedException {
 		cipherLock.lock();
 
 		try {
@@ -52,27 +52,27 @@ final class EstablishedSession {
 		}
 	}
 
-	public int sendTransportPacket(WireguardDevice device, ByteBuffer data) throws IOException {
+	public int sendTransportPacket(WireguardDevice device, ByteBuffer data) throws IOException, InterruptedException {
 		return device.transmit(outboundPacketAddress, createTransportPacket(data).buffer());
 	}
 
-	public void sendKeepalive(WireguardDevice device) throws IOException {
+	public void sendKeepalive(WireguardDevice device) throws IOException, InterruptedException {
 		sendTransportPacket(device, ByteBuffer.allocate(0));
 		markKeepaliveSent();
 	}
 
-	public void decryptTransportPacket(MessageTransport message, ByteBuffer dst) throws BadPaddingException {
+	public void decryptTransportPacket(MessageTransport message, ByteBuffer dst) throws BadPaddingException, InterruptedException {
 		decipher(message.counter(), message.content(), dst);
 	}
 
 	/**
 	 * @return the counter value used as a nonce for the packet
 	 */
-	long cipher(ByteBuffer src, ByteBuffer dst) throws ShortBufferException {
+	long cipher(ByteBuffer src, ByteBuffer dst) throws ShortBufferException, InterruptedException {
 		return keypair.cipher(src, dst);
 	}
 
-	void decipher(long counter, ByteBuffer src, ByteBuffer dst) throws BadPaddingException {
+	void decipher(long counter, ByteBuffer src, ByteBuffer dst) throws BadPaddingException, InterruptedException {
 		keypair.decipher(counter, src, dst);
 	}
 
