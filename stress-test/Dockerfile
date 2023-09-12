@@ -1,6 +1,6 @@
 FROM wireguard-java
 
-RUN apt install -y wget iptables
+RUN apt install -y wget iptables iperf3
 
 RUN mkdir -p /usr/share/java
 WORKDIR /usr/share/java
