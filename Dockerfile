@@ -21,6 +21,8 @@ FROM build-java as runtime
 RUN mkdir /app
 WORKDIR /app
 
-COPY --from=build-java /build /app
-COPY --from=build-native /build/libposix_raw.so /app
-ENTRYPOINT ["java", "-server", "-Djdk.system.logger.level=FINE", "--enable-preview", "-p", ".", "-Djava.library.path=.", "-m", "ax.xz.wireguard/ax.xz.wireguard.cli.WireguardTunnelCLI", "/wireguard.conf"]
+COPY --from=build-java /build .
+COPY --from=build-native /build/libposix_raw.so .
+
+COPY ./run.sh /app/run.sh
+ENTRYPOINT ["/app/run.sh", "/wireguard.conf"]
