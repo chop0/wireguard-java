@@ -12,6 +12,5 @@ WORKDIR /app
 
 RUN mkdir -p ax.xz.wireguard/META-INF/services
 RUN echo "org.slf4j.jdk.platform.logging.SLF4JSystemLoggerFinder" > 'ax.xz.wireguard/META-INF/services/java.lang.System$LoggerFinder'
-COPY ./entrypoint.sh /entrypoint_routing.sh
 EXPOSE 51820/udp
 ENTRYPOINT ["/entrypoint_routing.sh",  "-p", "/app:/usr/share/java/logback-core-1.4.9.jar:/usr/share/java/logback-classic-1.4.9.jar:/usr/share/java/slf4j-jdk-platform-logging-2.0.9.jar:/usr/share/java/slf4j-api-2.0.9.jar"]
