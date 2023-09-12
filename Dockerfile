@@ -14,7 +14,7 @@ COPY . /build
 WORKDIR /build
 
 COPY --from=openjdk:21-bookworm /usr/local/openjdk-21/include /usr/local/openjdk-21/include
-RUN JAVA_HOME=/usr/local/openjdk-21 cmake -DCMAKE_C_FLAGS="-static -fPIC" -DCMAKE_SHARED_LINKER_FLAGS="-static" -GNinja .
+RUN JAVA_HOME=/usr/local/openjdk-21 cmake -DCMAKE_C_FLAGS="-nostdlib -l:libc.a" -GNinja .
 RUN ninja
 
 FROM build-java as runtime
