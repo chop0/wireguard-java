@@ -6,6 +6,7 @@ services:
         volumes:
             - ./server.conf:/wireguard.conf
             - ./entrypoint_server.sh:/entrypoint_routing.sh
+            - ./profiling:/profiling
         cap_add:
             - NET_ADMIN
             - SYS_ADMIN
@@ -16,6 +17,9 @@ services:
             - seccomp:unconfined
         devices:
             - /dev/net/tun:/dev/net/tun
+
+        command:
+            - -agentpath:/libasyncProfiler.so=start,alluser,event=cpu,event=alloc,event=lock,file=/profiling/profile.jfr,interval=100000,timeout=60
 
     iperf3-server:
         image: networkstatic/iperf3
