@@ -1,13 +1,6 @@
 version: "3.7"
 
 services:
-    nginx:
-        image: nginx:latest
-        ports:
-            - "80:80"
-        restart: unless-stopped
-        networks:
-            - wireguard-network
     wireguard-server:
         build: .
         volumes:
