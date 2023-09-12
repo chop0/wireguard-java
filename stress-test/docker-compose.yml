@@ -17,7 +17,6 @@ services:
     iperf3-server:
         image: networkstatic/iperf3
         command: -s
-        restart: unless-stopped
         depends_on:
             - wireguard-server
         networks:
@@ -39,8 +38,7 @@ services:
 
     wireguard-client-iperf3:
         image: networkstatic/iperf3
-        command: -c iperf3-server
-        restart: unless-stopped
+        command: -c iperf3-server --bidir --parallel 128 -t 120
         network_mode: "service:wireguard-client"
         depends_on:
             - wireguard-client
