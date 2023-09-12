@@ -38,7 +38,7 @@ services:
 
     wireguard-client-iperf3:
         image: networkstatic/iperf3
-        command: -c iperf3-server --bidir --parallel 128 -t 120
+        command: -c iperf3-server --bidir -t 120
         network_mode: "service:wireguard-client"
         depends_on:
             - wireguard-client
