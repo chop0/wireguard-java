@@ -114,8 +114,9 @@ public class POSIXTun implements Tun {
 		return TunInterfaceConfigurer.get().subnets(name());
 	}
 
+	private static final boolean needsAfTypePrefix = System.getProperty("os.name").toLowerCase().contains("bsd") || System.getProperty("os.name").toLowerCase().contains("os x");
 	private boolean needsAfTypePrefix() {
-		return System.getProperty("os.name").toLowerCase().contains("bsd") || System.getProperty("os.name").toLowerCase().contains("os x");
+		return needsAfTypePrefix;
 	}
 
 	private static native int AFINET();

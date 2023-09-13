@@ -31,7 +31,7 @@ public final class MessageResponse extends PooledMessage implements Message {
 	}
 
 	public static MessageResponse create(int localIndex, int remoteIndex, NoisePublicKey localEphemeral, byte[] encryptedEmpty, NoisePublicKey initiatorKey) {
-		var buffer = ByteBuffer.allocate(LENGTH).order(ByteOrder.LITTLE_ENDIAN);
+		var buffer = ByteBuffer.allocateDirect(LENGTH).order(ByteOrder.LITTLE_ENDIAN);
 		buffer.putInt(TYPE);
 		buffer.putInt(localIndex);
 		buffer.putInt(remoteIndex);

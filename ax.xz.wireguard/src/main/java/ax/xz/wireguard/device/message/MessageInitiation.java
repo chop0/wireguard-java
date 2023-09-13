@@ -18,7 +18,7 @@ public final class MessageInitiation extends PooledMessage implements Message {
 	}
 
 	public static MessageInitiation create(int sender, NoisePublicKey ephemeral, byte[] encryptedStatic, byte[] encryptedTimestamp) {
-		var buffer = ByteBuffer.allocate(LENGTH).order(ByteOrder.LITTLE_ENDIAN);
+		var buffer = ByteBuffer.allocateDirect(LENGTH).order(ByteOrder.LITTLE_ENDIAN);
 
 		buffer.putInt(TYPE);
 		buffer.putInt(sender);
