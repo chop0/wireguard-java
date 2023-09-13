@@ -62,7 +62,7 @@ final class EstablishedSession {
 		}
 	}
 
-	private static final ExecutorService transmitExecutor = Executors.newVirtualThreadPerTaskExecutor();
+	private static final ExecutorService transmitExecutor = Executors.newSingleThreadExecutor(Thread.ofVirtual().factory());
 	public void enqueueTransportPacket(WireguardDevice device, ByteBuffer data) {
 		var ciphertextBuffer = getBuffer();
 		try {
