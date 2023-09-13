@@ -29,9 +29,10 @@ public class TunnelDeviceBond {
 				return null;
 			});
 			sts.fork(() -> {
+				int mtu = tunnel.mtu();
 				while (!Thread.interrupted()) {
 					try {
-						var buffer = ByteBuffer.allocateDirect(tunnel.mtu()); // reserve room for header
+						var buffer = ByteBuffer.allocateDirect(mtu);
 
 						tunnel.read(buffer);
 						buffer.flip();

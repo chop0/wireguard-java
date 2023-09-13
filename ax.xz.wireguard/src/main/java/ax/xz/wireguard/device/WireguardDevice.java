@@ -19,6 +19,8 @@ import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.DatagramChannel;
+import java.nio.channels.SelectionKey;
+import java.nio.channels.Selector;
 import java.time.Duration;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
@@ -49,6 +51,7 @@ public final class WireguardDevice implements Closeable {
 
 
 	private final DatagramChannel datagramChannel;
+	private final Selector selector;
 
 	// a list of encrypted, incoming packets waiting to be sent up the protocol stack
 	private final LinkedBlockingQueue<ByteBuffer> inboundTransportQueue = new LinkedBlockingQueue<>(1024);
@@ -65,6 +68,10 @@ public final class WireguardDevice implements Closeable {
 
 		try {
 			datagramChannel = DatagramChannel.open();
+			datagramChannel.configureBlocking(false);
+
+			selector = Selector.open();
+			datagramChannel.register(selector, SelectionKey.OP_READ);
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
@@ -221,12 +228,15 @@ public final class WireguardDevice implements Closeable {
 		try {
 			var buffer = ByteBuffer.allocateDirect(receiveBufferSize).order(ByteOrder.LITTLE_ENDIAN);
 
-			var addr = datagramChannel.receive(buffer);
-			buffer.flip();
-			int recv = buffer.remaining();
-			bytesReceived.addAndGet(recv);
+			if (selector.select() > 0) {
+				var addr = datagramChannel.receive(buffer);
+				buffer.flip();
+				int recv = buffer.remaining();
+				bytesReceived.addAndGet(recv);
 
-			handleMessage((InetSocketAddress) addr, Message.parse(buffer));
+				handleMessage((InetSocketAddress) addr, Message.parse(buffer));
+				selector.selectedKeys().clear();
+			}
 		} catch (BadPaddingException e) {
 			log.log(WARNING, "Received message with invalid padding");
 		}

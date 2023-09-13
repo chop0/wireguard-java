@@ -14,7 +14,7 @@ WORKDIR /build
 
 COPY --from=openjdk:21-bookworm /usr/local/openjdk-21/include /usr/local/openjdk-21/include
 RUN JAVA_HOME=/usr/local/openjdk-21 cmake -DCMAKE_C_FLAGS="-nostdlib -l:libc.a" -GNinja .
-RUN ninja
+RUN ninja -j$(nproc) libposix_raw.so
 
 FROM openjdk:21-slim as profiler-build
 RUN apt update && apt install -y build-essential git

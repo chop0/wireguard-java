@@ -11,7 +11,7 @@ import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 final class EstablishedSession {
 	private final SymmetricKeypair keypair;
@@ -35,20 +35,38 @@ final class EstablishedSession {
 		this.keepaliveInterval = keepaliveInterval;
 	}
 
-	public MessageTransport createTransportPacket(ByteBuffer data) throws InterruptedException {
-		try {
-			var ciphertext = ByteBuffer.allocateDirect(data.remaining() + 16);
+	private final ConcurrentLinkedQueue<ByteBuffer> bufferPool = new ConcurrentLinkedQueue<>();
 
-			long counter = cipher(data, ciphertext);
-			ciphertext.flip();
-			return MessageTransport.create(remoteIndex, counter, ciphertext);
+	private ByteBuffer getBuffer() {
+		var buffer = bufferPool.poll();
+		if (buffer == null) {
+			buffer = ByteBuffer.allocateDirect(0x1000);
+		}
+		return buffer;
+	}
+
+	private void releaseBuffer(ByteBuffer buffer) {
+		buffer.clear();
+		bufferPool.add(buffer);
+	}
+
+	public MessageTransport createTransportPacket(ByteBuffer data, ByteBuffer ciphertextBuffer) {
+		try {
+			long counter = cipher(data, ciphertextBuffer);
+			ciphertextBuffer.flip();
+			return MessageTransport.create(remoteIndex, counter, ciphertextBuffer);
 		} catch (ShortBufferException e) {
 			throw new Error(e); // should never happen
 		}
 	}
 
-	public int sendTransportPacket(WireguardDevice device, ByteBuffer data) throws IOException, InterruptedException {
-		return device.transmit(outboundPacketAddress, createTransportPacket(data).buffer());
+	public void sendTransportPacket(WireguardDevice device, ByteBuffer data) throws IOException, InterruptedException {
+		var ciphertextBuffer = getBuffer();
+		try {
+			device.transmit(outboundPacketAddress, createTransportPacket(data, ciphertextBuffer).buffer());
+		} finally {
+			releaseBuffer(ciphertextBuffer);
+		}
 	}
 
 	public void sendKeepalive(WireguardDevice device) throws IOException, InterruptedException {
@@ -63,11 +81,11 @@ final class EstablishedSession {
 	/**
 	 * @return the counter value used as a nonce for the packet
 	 */
-	long cipher(ByteBuffer src, ByteBuffer dst) throws ShortBufferException, InterruptedException {
+	long cipher(ByteBuffer src, ByteBuffer dst) throws ShortBufferException {
 		return keypair.cipher(src, dst);
 	}
 
-	void decipher(long counter, ByteBuffer src, ByteBuffer dst) throws BadPaddingException, InterruptedException, ShortBufferException {
+	void decipher(long counter, ByteBuffer src, ByteBuffer dst) throws BadPaddingException, ShortBufferException {
 		keypair.decipher(counter, src, dst);
 	}
 

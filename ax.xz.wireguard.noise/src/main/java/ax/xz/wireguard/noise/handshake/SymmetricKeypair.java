@@ -24,7 +24,7 @@ public final class SymmetricKeypair {
 
 	private final AtomicLong sendCounter = new AtomicLong(0);
 
-	SymmetricKeypair(SecretKey sendKey, SecretKey receiveKey) {
+	 SymmetricKeypair(SecretKey sendKey, SecretKey receiveKey) {
 		this.sendKey = sendKey;
 		this.receiveKey = receiveKey;
 	}
@@ -38,7 +38,7 @@ public final class SymmetricKeypair {
 	}
 
 
-	private long cipher0(ByteBuffer src, ByteBuffer dst) throws ShortBufferException {
+	public long cipher(ByteBuffer src, ByteBuffer dst) throws ShortBufferException {
 		var nonce = sendCounter.getAndIncrement();
 		var nonceBytes = new byte[ChaChaPoly1305NonceSize];
 		ByteBuffer.wrap(nonceBytes).order(ByteOrder.LITTLE_ENDIAN).position(4).putLong(nonce);
@@ -59,7 +59,7 @@ public final class SymmetricKeypair {
 		return nonce;
 	}
 
-	private void decipher0(long counter, ByteBuffer src, ByteBuffer dst) throws BadPaddingException, ShortBufferException {
+	public void decipher(long counter, ByteBuffer src, ByteBuffer dst) throws BadPaddingException, ShortBufferException {
 		var nonceBytes = new byte[ChaChaPoly1305NonceSize];
 		ByteBuffer.wrap(nonceBytes).order(ByteOrder.LITTLE_ENDIAN).position(4).putLong(counter);
 
@@ -77,33 +77,6 @@ public final class SymmetricKeypair {
 		} catch (AEADBadTagException ex) {
 			log.log(INFO, "counter is {0}, src.remaining() is {1}, dst.remaining() is {2}", counter, oldSrcLimit, oldDstLimit);
 			throw new ShortBufferException();
-		}
-	}
-
-	public long cipher(ByteBuffer src, ByteBuffer dst) throws ShortBufferException, InterruptedException {
-		var task = executor.submit(() -> cipher0(src, dst));
-		try {
-			return task.get();
-		} catch (ExecutionException e) {
-			if (e.getCause() instanceof ShortBufferException sbe)
-				throw sbe;
-			throw new RuntimeException(e);
-		}
-	}
-
-	public void decipher(long counter, ByteBuffer src, ByteBuffer dst) throws BadPaddingException, InterruptedException, ShortBufferException {
-		var task = executor.submit(() -> {
-			decipher0(counter, src, dst);
-			return null;
-		});
-		try {
-			task.get();
-		} catch (ExecutionException e) {
-			if (e.getCause() instanceof BadPaddingException bpe)
-				throw bpe;
-			else if (e.getCause() instanceof ShortBufferException sbe)
-				throw sbe;
-			throw new RuntimeException(e);
 		}
 	}
 }
