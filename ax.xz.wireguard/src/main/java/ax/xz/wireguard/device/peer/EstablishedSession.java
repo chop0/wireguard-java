@@ -12,6 +12,8 @@ import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 final class EstablishedSession {
 	private final SymmetricKeypair keypair;
@@ -60,17 +62,25 @@ final class EstablishedSession {
 		}
 	}
 
-	public void sendTransportPacket(WireguardDevice device, ByteBuffer data) throws IOException, InterruptedException {
+	private static final ExecutorService transmitExecutor = Executors.newVirtualThreadPerTaskExecutor();
+	public void enqueueTransportPacket(WireguardDevice device, ByteBuffer data) {
 		var ciphertextBuffer = getBuffer();
 		try {
-			device.transmit(outboundPacketAddress, createTransportPacket(data, ciphertextBuffer).buffer());
+			var result = createTransportPacket(data, ciphertextBuffer).buffer();
+			transmitExecutor.execute(() -> {
+				try {
+					device.transmit(outboundPacketAddress, result);
+				} catch (IOException e) {
+					throw new RuntimeException(e);
+				}
+			});
 		} finally {
 			releaseBuffer(ciphertextBuffer);
 		}
 	}
 
 	public void sendKeepalive(WireguardDevice device) throws IOException, InterruptedException {
-		sendTransportPacket(device, ByteBuffer.allocate(0));
+		enqueueTransportPacket(device, ByteBuffer.allocate(0));
 		markKeepaliveSent();
 	}
 

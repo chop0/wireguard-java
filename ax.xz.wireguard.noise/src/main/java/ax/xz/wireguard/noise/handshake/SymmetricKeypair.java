@@ -7,16 +7,13 @@ import java.nio.ByteOrder;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static ax.xz.wireguard.noise.crypto.Crypto.ChaChaPoly1305NonceSize;
 import static java.lang.System.Logger.Level.INFO;
 
 public final class SymmetricKeypair {
-	private static final ExecutorService executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
 	private static final System.Logger log = System.getLogger(SymmetricKeypair.class.getName());
 
 	private final SecretKey sendKey;
@@ -24,17 +21,26 @@ public final class SymmetricKeypair {
 
 	private final AtomicLong sendCounter = new AtomicLong(0);
 
-	 SymmetricKeypair(SecretKey sendKey, SecretKey receiveKey) {
+	SymmetricKeypair(SecretKey sendKey, SecretKey receiveKey) {
 		this.sendKey = sendKey;
 		this.receiveKey = receiveKey;
 	}
 
+	private static final ConcurrentLinkedQueue<Cipher> cipherPool = new ConcurrentLinkedQueue<>();
 	private Cipher getCipher() {
-		try {
-			return Cipher.getInstance("ChaCha20-Poly1305");
-		} catch (NoSuchAlgorithmException | NoSuchPaddingException e) {
-			throw new RuntimeException(e);
+		var cipher = cipherPool.poll();
+		if (cipher == null) {
+			try {
+				cipher = Cipher.getInstance("ChaCha20-Poly1305");
+			} catch (NoSuchAlgorithmException | NoSuchPaddingException e) {
+				throw new RuntimeException(e);
+			}
 		}
+		return cipher;
+	}
+
+	private void releaseCipher(Cipher cipher) {
+		cipherPool.add(cipher);
 	}
 
 
@@ -54,6 +60,8 @@ public final class SymmetricKeypair {
 			InvalidKeyException e
 		) {
 			throw new RuntimeException(e);
+		} finally {
+			releaseCipher(cipher);
 		}
 
 		return nonce;
@@ -77,6 +85,8 @@ public final class SymmetricKeypair {
 		} catch (AEADBadTagException ex) {
 			log.log(INFO, "counter is {0}, src.remaining() is {1}, dst.remaining() is {2}", counter, oldSrcLimit, oldDstLimit);
 			throw new ShortBufferException();
+		} finally {
+			releaseCipher(cipher);
 		}
 	}
 }

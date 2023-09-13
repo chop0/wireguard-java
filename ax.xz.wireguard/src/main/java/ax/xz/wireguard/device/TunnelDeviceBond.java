@@ -32,7 +32,7 @@ public class TunnelDeviceBond {
 				int mtu = tunnel.mtu();
 				while (!Thread.interrupted()) {
 					try {
-						var buffer = ByteBuffer.allocateDirect(mtu);
+						var buffer = ByteBuffer.allocateDirect(mtu); // TODO:  optimize
 
 						tunnel.read(buffer);
 						buffer.flip();

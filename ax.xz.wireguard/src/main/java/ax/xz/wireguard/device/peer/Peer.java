@@ -15,7 +15,6 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
@@ -31,12 +30,6 @@ public class Peer {
 
 	// a queue of transport messages that have been decrypted and need to be sent up the stack
 	private final LinkedBlockingQueue<ByteBuffer> inboundTransportQueue;
-
-	// a queue of outgoing transport message that are yet to be encrypted
-	private final LinkedBlockingQueue<ByteBuffer> outboundEncryptionQueue = new LinkedBlockingQueue<>(1024);
-
-	// a queue of inbound transport messages
-	private final LinkedBlockingQueue<TransportWithSession> inboundDecryptionQueue = new LinkedBlockingQueue<>(1024);
 
 	private final PeerConnectionInfo connectionInfo;
 
@@ -54,22 +47,12 @@ public class Peer {
 		logger.log(DEBUG, "Created peer {0}", this);
 	}
 
-	public void start() throws IOException {
+	public void start() {
 		if (!started.compareAndSet(false, true)) {
 			throw new IllegalStateException("Peer already started");
 		}
 
-		ScopedValue.runWhere(PEER, this, () -> {
-			try (var sts = new PersistentTaskExecutor<>("Peer executor", Function.identity(), logger)) {
-				sts.submit("Session manager", sessionManager::run);
-
-				sts.join();
-			} catch (InterruptedException e) {
-				logger.log(DEBUG, "Peer interrupted");
-			} finally {
-				logger.log(DEBUG, "Peer shutting down");
-			}
-		});
+		ScopedValue.runWhere(PEER, this, sessionManager::run);
 	}
 
 	public NoisePublicKey getRemoteStatic() {
@@ -85,7 +68,7 @@ public class Peer {
 		}
 	}
 
-	private final ExecutorService packetProcessor = Executors.newVirtualThreadPerTaskExecutor();
+	private static final ExecutorService packetProcessor = ForkJoinPool.commonPool();
 
 	/**
 	 * Enqueues an inbound transport message to be processed
@@ -109,43 +92,29 @@ public class Peer {
 	 * @throws IOException if no session is established or something is wrong with the socket
 	 */
 	public void enqueueTransportPacket(ByteBuffer data) {
-		packetProcessor.execute(() -> encryptAndEnqueue(data));
-	}
+		packetProcessor.execute(() -> {
+			var session = sessionManager.tryGetSessionNow();
+			if (session == null)
+				return;
 
-	/**
-	 * Encrypts all transport messages in the given list and sends them to the peer
-	 *
-	 * @param message the messages to encrypt
-	 */
-	private void encryptAndEnqueue(ByteBuffer message) {
-		var session = sessionManager.tryGetSessionNow();
-		if (session == null)
-			return;
-
-		try {
-			session.sendTransportPacket(device, message);
-		} catch (IOException e) {
-			logger.log(DEBUG, "Error sending transport packet", e);
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-		}
+			session.enqueueTransportPacket(device, data);
+		});
 	}
 
 	/**
 	 * Decrypts a transport message and enqueues it for reading
 	 *
 	 * @param inb the transport message to decrypt
-	 * @return true if the message was successfully decrypted, false otherwise
 	 */
-	private boolean decryptAndEnqueue(Peer.TransportWithSession inb) {
+	private void decryptAndEnqueue(TransportWithSession inb) {
 		int packetSize = inb.transport().content().remaining();
 		try {
 			if (inb.session() == null)
-				return false;
+				return;
 
 			if (inb.transport().content().remaining() < 16) {
 				logger.log(WARNING, "Received transport message with invalid length");
-				return false;
+				return;
 			}
 
 			var result = ByteBuffer.allocate(inb.transport().content().remaining() - 16);
@@ -157,7 +126,6 @@ public class Peer {
 			} else
 				inboundTransportQueue.add(result);
 
-			return true;
 		} catch (ShortBufferException e) {
 			int minimumSize = (int) (packetSize * 1.5);
 
@@ -169,7 +137,6 @@ public class Peer {
 			logger.log(WARNING, "Error decrypting transport message", e);
 		}
 
-		return false;
 	}
 
 	@Override

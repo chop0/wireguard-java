@@ -208,8 +208,6 @@ public final class WireguardDevice implements Closeable {
 			Runnable peerRunnable = () -> {
 				try {
 					peer.start();
-				} catch (IOException t) {
-					log.log(WARNING, "Error in peer loop", t);
 				} finally {
 					log.log(DEBUG, "Peer {0} exited", peer);
 					deregisterPeer(peer);
