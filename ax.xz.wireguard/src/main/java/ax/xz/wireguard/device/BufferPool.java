@@ -5,6 +5,7 @@ import java.lang.invoke.VarHandle;
 import java.nio.ByteBuffer;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
+import static java.lang.System.Logger.Level.DEBUG;
 import static java.lang.System.Logger.Level.WARNING;
 
 public class BufferPool implements AutoCloseable {
@@ -63,7 +64,7 @@ public class BufferPool implements AutoCloseable {
 			if (buffer == null) {
 				buffer = ByteBuffer.allocateDirect(bufferSize);
 				NUM_ALLOCATED.getAndAdd(this, 1);
-				logger.log(WARNING, "Buffer pool empty, allocating new buffer (allocated {0}, released {1})", numberAllocated, numberReleased);
+				logger.log(DEBUG, "Buffer pool empty, allocating new buffer (allocated {0}, released {1})", numberAllocated, numberReleased);
 			} else {
 				POOL_SIZE.getAndAdd(this, -1);
 			}

@@ -25,7 +25,7 @@ public final class MessageTransport implements Message, AutoCloseable  {
 	}
 
 	public int receiver() {
-		return bufferGuard.buffer().getInt(4);
+ 		return bufferGuard.buffer().getInt(4);
 	}
 
 	public long counter() {

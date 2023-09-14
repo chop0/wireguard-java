@@ -84,8 +84,10 @@ public class Peer {
 		// no use waiting for a session, since if the session is not established, we will not be able to decrypt the message
 		// because any sessions created in the future will have a different keypair
 		var currentSession = sessionManager.tryGetSessionNow();
-		if (currentSession == null)
+		if (currentSession == null) {
+			transport.close();
 			return;
+		}
 
 		packetProcessor.execute(() -> decryptAndEnqueue(transport, currentSession));
 	}
@@ -97,13 +99,16 @@ public class Peer {
 	 */
 	public void enqueueTransportPacket(BufferPool.BufferGuard data) {
 		packetProcessor.execute(() -> {
-			var session = sessionManager.tryGetSessionNow();
-			if (session == null)
-				return;
+			try {
+				var session = sessionManager.tryGetSessionNow();
+				if (session == null)
+					return;
 
-			var result = session.createTransportPacket(data.buffer());
-			data.close();
-			device.queueTransmit(session.getOutboundPacketAddress(), result.bufferGuard());
+				var result = session.createTransportPacket(data.buffer());
+				device.queueTransmit(session.getOutboundPacketAddress(), result.bufferGuard());
+			} finally {
+				data.close();
+			}
 		});
 	}
 
@@ -120,14 +125,16 @@ public class Peer {
 			var result = bufferPool.acquire(transport.content().remaining() - 16);
 			session.decryptTransportPacket(transport, result.buffer());
 			result.buffer().flip();
-			transport.close();
 
 			if (result.buffer().remaining() == 0) {
 				logger.log(DEBUG, "Received keepalive");
+				result.close();
 			} else
 				inboundTransportQueue.add(result);
 		} catch (Throwable e) {
 			logger.log(WARNING, "Error decrypting transport message", e);
+		} finally {
+			transport.close();
 		}
 
 	}

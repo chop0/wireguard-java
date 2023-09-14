@@ -70,6 +70,7 @@ class PeerList {
 			var peer = innerList.get(originIndex);
 			if (peer == null) {
 				log.log(DEBUG, "Received message from unknown peer {0}", origin);
+				message.close();
 				return;
 			}
 
