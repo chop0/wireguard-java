@@ -23,8 +23,6 @@ import static java.lang.System.Logger.Level.WARNING;
 import static java.util.Objects.requireNonNull;
 
 public class Peer {
-	public static final ScopedValue<Peer> PEER = ScopedValue.newInstance();
-
 	private static final Logger logger = System.getLogger(Peer.class.getName());
 
 	// a queue of transport messages that have been decrypted and need to be sent up the stack
@@ -52,7 +50,7 @@ public class Peer {
 		}
 
 		logger.log(DEBUG, "Started peer {0}", this);
-		ScopedValue.runWhere(PEER, this, sessionManager::run);
+		sessionManager.run();
 	}
 
 	public NoisePublicKey getRemoteStatic() {

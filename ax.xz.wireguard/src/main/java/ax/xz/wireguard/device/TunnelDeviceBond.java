@@ -22,12 +22,9 @@ public class TunnelDeviceBond {
 
 	public void run() throws InterruptedException {
 		// platform threads for performance
-		try (var sts = new PersistentTaskExecutor<>("TunnelDeviceBond", RuntimeException::new, logger, Thread.ofPlatform().factory())) {
-			sts.fork(() -> {
-				device.run();
-				return null;
-			});
-			sts.fork(() -> {
+		try (var sts = new PersistentTaskExecutor<>(RuntimeException::new, logger, Thread.ofPlatform().factory())) {
+			sts.submit(device::run);
+			sts.submit(() -> {
 				int mtu = tunnel.mtu();
 				while (!Thread.interrupted()) {
 					var buffer = device.getBufferPool().acquire(mtu);
@@ -46,7 +43,7 @@ public class TunnelDeviceBond {
 				return null;
 			});
 
-			sts.fork(() -> {
+			sts.submit(() -> {
 				while (!Thread.interrupted()) {
 					try (var transport = device.receiveIncomingTransport()) {
 						tunnel.write(transport.buffer());
@@ -61,7 +58,7 @@ public class TunnelDeviceBond {
 			try (var sch = new ScheduledThreadPoolExecutor(0, Thread.ofVirtual().factory())) {
 				sch.scheduleAtFixedRate(() -> logger.log(INFO, device.getStats().toString()), 0, 10, java.util.concurrent.TimeUnit.SECONDS);
 
-				sts.join();
+				sts.awaitTermination();
 			}
 		}
 	}

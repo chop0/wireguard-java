@@ -55,14 +55,14 @@ final class SessionManager {
 	}
 
 	public void run() {
-		logger = System.getLogger("[%s] %s".formatted(Peer.PEER.get(), SessionManager.class.getSimpleName()));
+		logger = System.getLogger("[%s] %s".formatted(peer, SessionManager.class.getSimpleName()));
 
-		try (var executor = new PersistentTaskExecutor<>("Session workers", IOException::new, logger, Thread.ofVirtual().factory())) {
+		try (var executor = new PersistentTaskExecutor<>(IOException::new, logger, Thread.ofVirtual().factory())) {
 			executor.submit("Session initiation thread", this::sessionInitiationThread);
 			executor.submit("Handshake responder thread", this::handshakeResponderThread);
 			executor.submit("Keepalive thread", this::keepaliveThread);
 
-			executor.join();
+			executor.awaitTermination();
 		} catch (InterruptedException e) {
 			logger.log(DEBUG, "Broken connection worker interrupted");
 			Thread.currentThread().interrupt();

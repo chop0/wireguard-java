@@ -5,14 +5,14 @@ import static java.lang.System.Logger.Level.*;
 
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
-import java.util.concurrent.StructuredTaskScope;
-import java.util.concurrent.ThreadFactory;
+import java.time.Duration;
+import java.util.concurrent.*;
 import java.util.function.Function;
 
 /**
  * A {@link StructuredTaskScope} that logs and shuts down the executor if a task fails.
  */
-public class PersistentTaskExecutor<E extends Throwable> extends StructuredTaskScope<Void> {
+public class PersistentTaskExecutor<E extends Throwable> extends ThreadPoolExecutor {
 	private static final VarHandle FIRST_EXCEPTION;
 	static {
 		try {
@@ -28,39 +28,38 @@ public class PersistentTaskExecutor<E extends Throwable> extends StructuredTaskS
 	private final Function<? super Throwable, ? extends E> exceptionMapper;
 	private final Logger logger;
 
-	public PersistentTaskExecutor(String name, Function<? super Throwable, ? extends E> exceptionMapper, Logger logger, ThreadFactory threadFactory) {
-		super(name, threadFactory);
+	public PersistentTaskExecutor(Function<? super Throwable, ? extends E> exceptionMapper, Logger logger, ThreadFactory threadFactory) {
+		super(0, Integer.MAX_VALUE, 0, TimeUnit.NANOSECONDS, new SynchronousQueue<>(), threadFactory);
 		this.exceptionMapper = exceptionMapper;
 		this.logger = logger;
 	}
 
-	@Override
-	protected void handleComplete(Subtask<? extends Void> subtask) {
-		super.handleComplete(subtask);
-
-		if (subtask.state() == Subtask.State.FAILED && FIRST_EXCEPTION.compareAndSet(this, null, subtask.exception())) {
-			logger.log(ERROR, "Persistent task failed", firstException);
-			shutdown();
-		}
-	}
-
 	public void submit(String taskName, InterruptibleRunnable task) {
-		fork(() -> {
+		submit(() -> {
 			Thread.currentThread().setName(taskName);
 			try {
 				task.run();
 			} catch (InterruptedException e) {
 				logger.log(WARNING, "Persistent task interrupted");
-				throw e;
+				Thread.currentThread().interrupt();
+			} catch (Throwable e) {
+				logger.log(WARNING, "Persistent task failed", e);
+				FIRST_EXCEPTION.compareAndSet(this, null, e);
 			}
-
-			return null;
 		});
 	}
 
 	public void throwIfFailed() throws E {
 		if (firstException != null)
 			throw exceptionMapper.apply(firstException);
+	}
+
+	public void awaitTermination() throws InterruptedException {
+		awaitTermination(Long.MAX_VALUE, TimeUnit.MILLISECONDS);
+	}
+
+	public void awaitTermination(Duration timeout) throws InterruptedException {
+		awaitTermination(timeout.toMillis(), TimeUnit.MILLISECONDS);
 	}
 
 	public interface InterruptibleRunnable {

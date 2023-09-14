@@ -8,10 +8,8 @@ import ax.xz.wireguard.noise.keys.NoisePublicKey;
 import javax.crypto.*;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
-import java.lang.foreign.Arena;
 import java.nio.charset.StandardCharsets;
 import java.security.*;
-import java.util.Arrays;
 
 import static ax.xz.wireguard.noise.crypto.Crypto.*;
 import static java.lang.System.Logger;

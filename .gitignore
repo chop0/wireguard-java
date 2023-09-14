@@ -7,3 +7,4 @@
 **/bazel-*
 **/build
 **/*.jfr
+wgcf-account.toml

@@ -12,7 +12,8 @@ import java.net.InetSocketAddress;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.StructuredTaskScope;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import static java.lang.System.Logger.Level.DEBUG;
@@ -266,15 +267,15 @@ class PeerList {
 
 		@Override
 		public void close() {
-			try (var sts = new StructuredTaskScope<>()) {
+			try (var sts = Executors.newVirtualThreadPerTaskExecutor()) {
 				for (var peer : peerTasks.keySet()) {
-					sts.fork(() -> {
+					sts.submit(() -> {
 						stopPeer(peer);
 						return null;
 					});
 				}
 
-				sts.join();
+				sts.awaitTermination(1, TimeUnit.SECONDS);
 			} catch (InterruptedException e) {
 				Thread.currentThread().interrupt();
 			}

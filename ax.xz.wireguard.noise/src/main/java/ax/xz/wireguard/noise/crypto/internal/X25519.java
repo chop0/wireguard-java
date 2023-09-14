@@ -1,8 +1,5 @@
 package ax.xz.wireguard.noise.crypto.internal;
 
-import ax.xz.wireguard.noise.crypto.internal.Ed25519;
-import ax.xz.wireguard.noise.crypto.internal.X25519Field;
-
 import java.security.SecureRandom;
 
 public abstract class X25519

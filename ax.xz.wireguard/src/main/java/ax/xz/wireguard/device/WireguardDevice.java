@@ -30,10 +30,6 @@ import static java.lang.System.Logger;
 import static java.lang.System.Logger.Level.*;
 
 public final class WireguardDevice implements Closeable {
-	private static final Duration DEFAULT_KEEPALIVE_INTERVAL = Duration.ofSeconds(25);
-
-	public static final ScopedValue<WireguardDevice> CURRENT_DEVICE = ScopedValue.newInstance();
-
 	private static final Logger log = System.getLogger(WireguardDevice.class.getName());
 
 	private final NoisePrivateKey staticIdentity;
@@ -72,45 +68,43 @@ public final class WireguardDevice implements Closeable {
 	}
 
 	public void run() {
-		ScopedValue.runWhere(CURRENT_DEVICE, this, () -> {
-			try (var outerExecutor = new PersistentTaskExecutor<>("Device executor", RuntimeException::new, log, Thread.ofPlatform().factory())) { // RuntimeException, since we don't expect this to recover
-				outerExecutor.submit("Inbound packet listener", () -> {
-					while (!Thread.interrupted()) {
-						try {
-							receiveMessageInwards();
-						} catch (Message.InvalidMessageException e) {
-							log.log(DEBUG, "Received invalid message", e);
-						} catch (IOException e) {
-							log.log(ERROR, "Error receiving packet", e);
-							if (!datagramChannel.isOpen())
-								break;
-						}
+		try (var outerExecutor = new PersistentTaskExecutor<>(RuntimeException::new, log, Thread.ofPlatform().factory())) { // RuntimeException, since we don't expect this to recover
+			outerExecutor.submit("Inbound packet listener", () -> {
+				while (!Thread.interrupted()) {
+					try {
+						receiveMessageInwards();
+					} catch (Message.InvalidMessageException e) {
+						log.log(DEBUG, "Received invalid message", e);
+					} catch (IOException e) {
+						log.log(ERROR, "Error receiving packet", e);
+						if (!datagramChannel.isOpen())
+							break;
 					}
-				});
+				}
+			});
 
-				outerExecutor.submit("Packet transmitter", () -> {
-					while (!Thread.interrupted()) {
-						var datagram = outboundTransportQueue.take();
+			outerExecutor.submit("Packet transmitter", () -> {
+				while (!Thread.interrupted()) {
+					var datagram = outboundTransportQueue.take();
 
-						try {
-							datagramChannel.send(datagram.data.buffer(), datagram.address);
-						} catch (IOException e) {
-							log.log(ERROR, "Error sending packet", e);
-						} finally {
-							datagram.data.close();
-						}
+					try {
+						datagramChannel.send(datagram.data.buffer(), datagram.address);
+					} catch (IOException e) {
+						log.log(ERROR, "Error sending packet", e);
+					} finally {
+						datagram.data.close();
 					}
-				});
+				}
+			});
 
-				outerExecutor.join();
-				outerExecutor.throwIfFailed();
-			} catch (InterruptedException e) {
-				log.log(DEBUG, "Receive loop interrupted", e);
-			} catch (Throwable e) {
-				log.log(ERROR, "Error in receive loop", e);
-				throw e;
-			}
-		});
+			outerExecutor.awaitTermination();
+			outerExecutor.throwIfFailed();
+		} catch (InterruptedException e) {
+			log.log(DEBUG, "Receive loop interrupted", e);
+		} catch (Throwable e) {
+			log.log(ERROR, "Error in receive loop", e);
+			throw e;
+		}
 	}
 
 	public void bind(SocketAddress endpoint) throws IOException {
@@ -144,6 +138,7 @@ public final class WireguardDevice implements Closeable {
 
 	/**
 	 * Returns a buffer containing a decrypted transport packet.
+	 *
 	 * @return the buffer containing the decrypted transport packet.  The buffer must be released to this device's buffer pool after use.
 	 * @throws InterruptedException if the thread is interrupted while waiting for a peer to be available
 	 */
@@ -170,6 +165,7 @@ public final class WireguardDevice implements Closeable {
 	/**
 	 * Handles a message received from the given address.
 	 * Will eventually release the buffer backing message back to the buffer pool.
+	 *
 	 * @param address
 	 * @param message
 	 * @throws BadPaddingException
@@ -203,8 +199,9 @@ public final class WireguardDevice implements Closeable {
 
 	/**
 	 * Enqueues a packet to be sent to the given address.
+	 *
 	 * @param address the address to send to
-	 * @param data the data to send.  must be a buffer allocated from the buffer pool
+	 * @param data    the data to send.  must be a buffer allocated from the buffer pool
 	 */
 	public void queueTransmit(SocketAddress address, BufferPool.BufferGuard data) {
 		outboundTransportQueue.offer(new EnqueuedPacket(address, data));
