@@ -3,14 +3,40 @@ package ax.xz.wireguard.noise.crypto;
 import org.junit.jupiter.api.Test;
 
 import javax.crypto.AEADBadTagException;
+import javax.crypto.spec.SecretKeySpec;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.security.Key;
+import java.security.spec.AlgorithmParameterSpec;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.concurrent.ThreadLocalRandom;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 public class Poly1305Test {
+	private static final MethodHandle POLY1305_CONSTRUCTOR, POLY1305_ENGINE_INIT, POLY1305_ENGINE_UPDATE, POLY1305_ENGINE_DO_FINAL;
+
+	static {
+		try {
+			var poly1305Class = Class.forName("com.sun.crypto.provider.Poly1305");
+			POLY1305_CONSTRUCTOR = MethodHandles.privateLookupIn(poly1305Class, MethodHandles.lookup())
+				.findConstructor(poly1305Class, MethodType.methodType(void.class));
+			POLY1305_ENGINE_INIT = MethodHandles.privateLookupIn(poly1305Class, MethodHandles.lookup())
+				.findVirtual(poly1305Class, "engineInit", MethodType.methodType(void.class, Key.class, AlgorithmParameterSpec.class));
+			POLY1305_ENGINE_UPDATE = MethodHandles.privateLookupIn(poly1305Class, MethodHandles.lookup())
+				.findVirtual(poly1305Class, "engineUpdate", MethodType.methodType(void.class, byte[].class, int.class, int.class));
+			POLY1305_ENGINE_DO_FINAL = MethodHandles.privateLookupIn(poly1305Class, MethodHandles.lookup())
+				.findVirtual(poly1305Class, "engineDoFinal", MethodType.methodType(byte[].class));
+		} catch (NoSuchMethodException | IllegalAccessException | ClassNotFoundException e) {
+			throw new RuntimeException(e);
+		}
+	}
+
 	private static final byte[] TEST_KEY = {
 		(byte) 0x85, (byte) 0xd6, (byte) 0xbe, (byte) 0x78, (byte) 0x57, (byte) 0x55, (byte) 0x6d, (byte) 0x33,
 		(byte) 0x7f, (byte) 0x44, (byte) 0x52, (byte) 0xfe, (byte) 0x42, (byte) 0xd5, (byte) 0x06, (byte) 0xa8,
@@ -23,8 +49,55 @@ public class Poly1305Test {
 		var text = "Cryptographic Forum Research Group";
 		byte[] expectedTag = {(byte) 0xa8, (byte) 0x06, (byte) 0x1d, (byte) 0xc1, (byte) 0x30, (byte) 0x51, (byte) 0x36, (byte) 0xc6, (byte) 0xc2, (byte) 0x2b, (byte) 0x8b, (byte) 0xaf, (byte) 0x0c, (byte) 0x01, (byte) 0x27, (byte) 0xa9};
 
-		var tag = Poly1305.poly1305(ByteBuffer.wrap(text.getBytes()), TEST_KEY);
+		var tag = Poly1305.poly1305(ByteBuffer.wrap(text.getBytes()), ByteBuffer.wrap(TEST_KEY));
 		assertArrayEquals(expectedTag, tag);
+	}
+
+	@Test
+	void benchmarkPoly1305() throws Throwable {
+		var plaintext = "Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.";
+		var plaintextBytes = plaintext.getBytes(StandardCharsets.UTF_8);
+
+		var key = new byte[32];
+		ThreadLocalRandom.current().nextBytes(key);
+
+		var keybb = ByteBuffer.allocateDirect(32);
+		keybb.put(key);
+		keybb.flip();
+
+		var plaintextbb = ByteBuffer.allocateDirect(plaintextBytes.length);
+		plaintextbb.put(plaintextBytes);
+		plaintextbb.flip();
+
+		{
+			var start = Instant.now();
+			for (int i = 0; i < 1000000; i++) {
+				plaintextbb.position(0);
+				keybb.position(0);
+				Poly1305.poly1305(plaintextbb, keybb);
+			}
+			var end = Instant.now();
+
+			System.out.println("Time taken with Poly1305(): " + Duration.between(start, end).toMillis());
+		}
+
+		{
+			var start = Instant.now();
+			for (int i = 0; i < 1000000; i++) {
+				byte[] serializedKey = new byte[1024];
+				int[] state = new int[16];
+				ChaCha20.initializeState(key, new byte[12], state, 0);
+				ChaCha20.chacha20Block(state, serializedKey);
+
+				var poly1305 = POLY1305_CONSTRUCTOR.invoke();
+				POLY1305_ENGINE_INIT.invoke(poly1305, (Key) new SecretKeySpec(serializedKey, 0, 32, "ChaCha20-Poly1305"), (AlgorithmParameterSpec) null);
+				POLY1305_ENGINE_UPDATE.invoke(poly1305, plaintextBytes, 0, plaintextBytes.length);
+				POLY1305_ENGINE_DO_FINAL.invoke(poly1305);
+			}
+			var end = Instant.now();
+
+			System.out.println("Time taken with java poly1205(): " + Duration.between(start, end).toMillis());
+		}
 	}
 
 	@Test
@@ -58,7 +131,7 @@ public class Poly1305Test {
 		};
 
 		byte[] output = new byte[32];
-		Poly1305.poly1305ChaChaKeyGen(key, nonce, output);
+		Poly1305.poly1305ChaChaKeyGen(key, nonce, ByteBuffer.wrap(output));
 		assertArrayEquals(expectedOutput, output);
 	}
 

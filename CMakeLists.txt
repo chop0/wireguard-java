@@ -20,3 +20,7 @@ set(SOURCE_FILES
 )
 
 add_library(posix_raw SHARED ${SOURCE_FILES})
+
+set(SOURCE_FILES ax.xz.wireguard.noise/src/main/c/poly1305-donna.c)
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Ofast -march=native")
+add_library(poly1305-donna SHARED ${SOURCE_FILES})

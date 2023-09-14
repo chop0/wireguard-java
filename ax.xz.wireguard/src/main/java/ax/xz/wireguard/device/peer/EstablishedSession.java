@@ -68,11 +68,15 @@ final class EstablishedSession {
 	 * @return the counter value used as a nonce for the packet
 	 */
 	long cipher(ByteBuffer src, ByteBuffer dst) throws ShortBufferException {
-		return keypair.cipher(src, dst);
+		try (var scratchBuffer = bufferPool.acquire(keypair.scratchBufferSize(src, dst))) {
+			return keypair.cipher(scratchBuffer.buffer(), src, dst);
+		}
 	}
 
-	void decipher(long counter, ByteBuffer src, ByteBuffer dst) throws BadPaddingException, ShortBufferException {
-		keypair.decipher(counter, src, dst);
+	void decipher(long counter, ByteBuffer src, ByteBuffer dst) throws BadPaddingException {
+		try (var scratchBuffer = bufferPool.acquire(keypair.scratchBufferSize(src, dst))) {
+			keypair.decipher(scratchBuffer.buffer(), counter, src, dst);
+		}
 	}
 
 	public Instant expiration() {
