@@ -84,7 +84,7 @@ public final class SymmetricKeypair {
 			throw new Error("unexpected error (we're using a stream cipher)", e);
 		} catch (AEADBadTagException ex) {
 			log.log(INFO, "counter is {0}, src.remaining() is {1}, dst.remaining() is {2}", counter, oldSrcLimit, oldDstLimit);
-			throw new ShortBufferException();
+			throw ex;
 		} finally {
 			releaseCipher(cipher);
 		}

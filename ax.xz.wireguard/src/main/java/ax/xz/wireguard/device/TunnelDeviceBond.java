@@ -32,7 +32,7 @@ public class TunnelDeviceBond {
 					try {
 						tunnel.read(buffer.buffer());
 						buffer.buffer().flip();
-						device.broadcastMessageOutwards(buffer);
+						device.broadcastTransportOutwards(buffer);
 					} catch (IOException e) {
 						logger.log(WARNING, "Error reading from tunnel", e);
 						buffer.close();

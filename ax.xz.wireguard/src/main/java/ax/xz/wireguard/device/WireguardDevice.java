@@ -69,7 +69,7 @@ public final class WireguardDevice implements Closeable {
 
 	public void run() {
 		try (var outerExecutor = new PersistentTaskExecutor<>(RuntimeException::new, log, Thread.ofPlatform().factory())) { // RuntimeException, since we don't expect this to recover
-			outerExecutor.submit("Inbound packet listener", () -> {
+			outerExecutor.submit("Peer packet listener", () -> {
 				while (!Thread.interrupted()) {
 					try {
 						receiveMessageInwards();
@@ -83,7 +83,7 @@ public final class WireguardDevice implements Closeable {
 				}
 			});
 
-			outerExecutor.submit("Packet transmitter", () -> {
+			outerExecutor.submit("Peer packet transmitter", () -> {
 				while (!Thread.interrupted()) {
 					var datagram = outboundTransportQueue.take();
 
@@ -112,7 +112,7 @@ public final class WireguardDevice implements Closeable {
 		log.log(DEBUG, "Bound to {0}", endpoint);
 	}
 
-	public void broadcastMessageOutwards(BufferPool.BufferGuard data) throws IOException {
+	public void broadcastTransportOutwards(BufferPool.BufferGuard data) throws IOException {
 		peerList.broadcastMessageOutwards(data);
 	}
 
