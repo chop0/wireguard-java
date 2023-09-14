@@ -9,7 +9,8 @@ RUN javac --enable-preview --source 21 -p /build -d /build --module-source-path 
 FROM alpine:3.18.3 as build-native
 RUN --mount=type=cache,target=/var/cache/apk apk update && apk add cmake ninja build-base linux-headers
 
-COPY . /build
+COPY ./CMakeLists.txt /build/CMakeLists.txt
+COPY ./ax.xz.raw.posix/src/main/c /build/ax.xz.raw.posix/src/main/c
 WORKDIR /build
 
 COPY --from=openjdk:21-bookworm /usr/local/openjdk-21/include /usr/local/openjdk-21/include
@@ -23,14 +24,25 @@ RUN cd /src && make
 RUN mkdir /out && cp /src/build/lib/* /out/ && cp /src/build/bin/* /out/
 
 FROM openjdk:21-slim as runtime
-RUN --mount=type=cache,target=/var/cache/apt apt update && apt install -y iproute2 iptables iperf3 iputils-ping net-tools tcpdump
+RUN --mount=type=cache,target=/var/cache/apt apt update && apt install -y iproute2 iptables iperf3 iputils-ping net-tools tcpdump wget
 
 RUN mkdir /app
 WORKDIR /app
+
+RUN mkdir -p /usr/share/java
+WORKDIR /usr/share/java
+RUN wget https://repo1.maven.org/maven2/ch/qos/logback/logback-core/1.4.9/logback-core-1.4.9.jar
+RUN wget https://repo1.maven.org/maven2/ch/qos/logback/logback-classic/1.4.9/logback-classic-1.4.9.jar
+RUN wget https://repo1.maven.org/maven2/org/slf4j/slf4j-jdk-platform-logging/2.0.9/slf4j-jdk-platform-logging-2.0.9.jar
+RUN wget https://repo1.maven.org/maven2/org/slf4j/slf4j-api/2.0.9/slf4j-api-2.0.9.jar
+WORKDIR /app
+
+RUN mkdir -p ax.xz.wireguard/META-INF/services
+RUN echo "org.slf4j.jdk.platform.logging.SLF4JSystemLoggerFinder" > 'ax.xz.wireguard/META-INF/services/java.lang.System$LoggerFinder'
 
 COPY --from=build-java /build .
 COPY --from=build-native /build/libposix_raw.so .
 COPY --from=profiler-build /out/libasyncProfiler.so /libasyncProfiler.so
 
 COPY ./run.sh /app/run.sh
-ENTRYPOINT ["/app/run.sh"]
+ENTRYPOINT ["/app/run.sh",  "-p", "/app:/usr/share/java/logback-core-1.4.9.jar:/usr/share/java/logback-classic-1.4.9.jar:/usr/share/java/slf4j-jdk-platform-logging-2.0.9.jar:/usr/share/java/slf4j-api-2.0.9.jar"]

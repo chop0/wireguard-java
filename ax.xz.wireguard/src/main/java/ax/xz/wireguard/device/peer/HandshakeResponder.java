@@ -30,10 +30,10 @@ class HandshakeResponder {
 			throw new IOException("Failed to decrypt initiation", ex);
 		}
 
-		var packet = MessageResponse.create(localIndex, initiation.sender(), handshake.getLocalEphemeral(), handshake.getEncryptedEmpty(), handshake.getRemotePublicKey());
-		device.transmit(remoteAddress, packet.buffer());
+		var packet = MessageResponse.create(device.getBufferPool(), localIndex, initiation.sender(), handshake.getLocalEphemeral(), handshake.getEncryptedEmpty(), handshake.getRemotePublicKey());
+		device.transmitNow(remoteAddress, packet.bufferGuard());
 
-		this.session = new EstablishedSession(handshake.getKeypair(), remoteAddress, localIndex, initiation.sender(), keepaliveInterval);
+		this.session = new EstablishedSession(device.getBufferPool(), handshake.getKeypair(), remoteAddress, initiation.sender(), keepaliveInterval);
 	}
 
 	public static EstablishedSession respond(WireguardDevice device, MessageInitiation initiation, Duration keepaliveInterval, InetSocketAddress remoteAddress, int localIndex) throws IOException {

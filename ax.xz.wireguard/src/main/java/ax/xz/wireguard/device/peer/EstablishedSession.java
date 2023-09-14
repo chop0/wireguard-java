@@ -1,5 +1,6 @@
 package ax.xz.wireguard.device.peer;
 
+import ax.xz.wireguard.device.BufferPool;
 import ax.xz.wireguard.device.WireguardDevice;
 import ax.xz.wireguard.noise.handshake.SymmetricKeypair;
 import ax.xz.wireguard.device.message.MessageTransport;
@@ -11,80 +12,56 @@ import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 final class EstablishedSession {
 	private final SymmetricKeypair keypair;
 
-	private final int localIndex;
 	private final int remoteIndex;
 
 	private final InetSocketAddress outboundPacketAddress;
+
+	private final BufferPool bufferPool;
 
 	private final Duration keepaliveInterval;
 	private Instant lastKeepalive;
 
 	private final Instant expiration = Instant.now().plusSeconds(120);
 
-	public EstablishedSession(SymmetricKeypair keypair, InetSocketAddress outboundPacketAddress, int localIndex, int remoteIndex, Duration keepaliveInterval) {
+	public EstablishedSession(BufferPool bufferPool, SymmetricKeypair keypair, InetSocketAddress outboundPacketAddress, int remoteIndex, Duration keepaliveInterval) {
+		this.bufferPool = bufferPool;
 		this.keypair = keypair;
 		this.outboundPacketAddress = outboundPacketAddress;
 
-		this.localIndex = localIndex;
 		this.remoteIndex = remoteIndex;
 		this.keepaliveInterval = keepaliveInterval;
 	}
 
-	private final ConcurrentLinkedQueue<ByteBuffer> bufferPool = new ConcurrentLinkedQueue<>();
-
-	private ByteBuffer getBuffer() {
-		var buffer = bufferPool.poll();
-		if (buffer == null) {
-			buffer = ByteBuffer.allocateDirect(0x1000);
-		}
-		return buffer;
-	}
-
-	private void releaseBuffer(ByteBuffer buffer) {
-		buffer.clear();
-		bufferPool.add(buffer);
-	}
-
-	public MessageTransport createTransportPacket(ByteBuffer data, ByteBuffer ciphertextBuffer) {
+	public MessageTransport createTransportPacket(ByteBuffer unencryptedData) {
 		try {
-			long counter = cipher(data, ciphertextBuffer);
-			ciphertextBuffer.flip();
-			return MessageTransport.create(remoteIndex, counter, ciphertextBuffer);
+			var transport = MessageTransport.createWithHeader(bufferPool, unencryptedData.remaining() + 16, remoteIndex);
+			long counter = cipher(unencryptedData, transport.content());
+			transport.setCounter(counter);
+			transport.bufferGuard().buffer().flip();
+
+			return transport;
 		} catch (ShortBufferException e) {
 			throw new Error(e); // should never happen
 		}
 	}
 
-	private static final ExecutorService transmitExecutor = Executors.newSingleThreadExecutor(Thread.ofVirtual().factory());
-	public void enqueueTransportPacket(WireguardDevice device, ByteBuffer data) {
-		var ciphertextBuffer = getBuffer();
+	public void sendKeepalive(WireguardDevice device) throws IOException {
+		var transport = createTransportPacket(BufferPool.empty());
+
 		try {
-			var result = createTransportPacket(data, ciphertextBuffer).buffer();
-			transmitExecutor.execute(() -> {
-				try {
-					device.transmit(outboundPacketAddress, result);
-				} catch (IOException e) {
-					throw new RuntimeException(e);
-				}
-			});
-		} finally {
-			releaseBuffer(ciphertextBuffer);
+			device.transmitNow(outboundPacketAddress, transport.bufferGuard());
+			markKeepaliveSent();
+		} catch (IOException e) {
+			transport.close();
+			throw e;
 		}
 	}
 
-	public void sendKeepalive(WireguardDevice device) throws IOException, InterruptedException {
-		enqueueTransportPacket(device, ByteBuffer.allocate(0));
-		markKeepaliveSent();
-	}
-
-	public void decryptTransportPacket(MessageTransport message, ByteBuffer dst) throws BadPaddingException, InterruptedException, ShortBufferException {
+	public void decryptTransportPacket(MessageTransport message, ByteBuffer dst) throws BadPaddingException, ShortBufferException {
 		decipher(message.counter(), message.content(), dst);
 	}
 
@@ -103,10 +80,6 @@ final class EstablishedSession {
 		return expiration;
 	}
 
-	public int localIndex() {
-		return localIndex;
-	}
-
 	public InetSocketAddress getOutboundPacketAddress() {
 		return outboundPacketAddress;
 	}
@@ -115,7 +88,6 @@ final class EstablishedSession {
 	public String toString() {
 		return "EstablishedSession[" +
 			   "keypair=" + keypair + ", " +
-			   "localIndex=" + localIndex + ", " +
 			   "remoteIndex=" + remoteIndex + ']';
 	}
 

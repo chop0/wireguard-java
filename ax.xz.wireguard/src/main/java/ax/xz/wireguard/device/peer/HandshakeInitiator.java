@@ -19,19 +19,20 @@ class HandshakeInitiator {
 	private final int localIndex;
 
 	private final Handshakes.InitiatorStageOne handshake;
+	private final WireguardDevice device;
 
 	private HandshakeInitiator(WireguardDevice device, Peer.PeerConnectionInfo connectionInfo, int localIndex) throws IOException {
-		requireNonNull(device);
-		requireNonNull(connectionInfo);
-		requireNonNull(connectionInfo.endpoint());
+		this.device = requireNonNull(device);
 
-		this.connectionInfo = connectionInfo;
+		requireNonNull(connectionInfo.endpoint());
+		this.connectionInfo = requireNonNull(connectionInfo);
+
 		this.localIndex = localIndex;
 
 		this.handshake = Handshakes.initiateHandshake(device.getStaticIdentity(), connectionInfo.remoteStatic(), connectionInfo.presharedKey());
 
-		var packet = MessageInitiation.create(localIndex, handshake.getLocalEphemeral().publicKey(), handshake.getEncryptedStatic(), handshake.getEncryptedTimestamp());
-		device.transmit(connectionInfo.endpoint(), packet.getSignedBuffer(connectionInfo.remoteStatic()));
+		var packet = MessageInitiation.create(device.getBufferPool(), localIndex, handshake.getLocalEphemeral().publicKey(), handshake.getEncryptedStatic(), handshake.getEncryptedTimestamp());
+		device.transmitNow(connectionInfo.endpoint(), packet.getSignedBuffer(connectionInfo.remoteStatic()));
 	}
 
 	public static HandshakeInitiator initiate(WireguardDevice device, Peer.PeerConnectionInfo connectionInfo, int localIndex) throws IOException {
@@ -42,7 +43,7 @@ class HandshakeInitiator {
 	public void consumeResponse(MessageResponse response) throws IOException {
 		try {
 			var kp = handshake.consumeMessageResponse(response.ephemeral(), response.encryptedEmpty());
-			session = new EstablishedSession(kp, connectionInfo.endpoint(), localIndex, response.sender(), connectionInfo.keepaliveInterval());
+			session = new EstablishedSession(device.getBufferPool(), kp, connectionInfo.endpoint(), response.sender(), connectionInfo.keepaliveInterval());
 		} catch (BadPaddingException ex) {
 			throw new IOException("Failed to decrypt response", ex);
 		}

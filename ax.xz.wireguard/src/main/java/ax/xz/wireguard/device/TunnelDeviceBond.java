@@ -4,8 +4,6 @@ import ax.xz.raw.spi.Tun;
 import ax.xz.wireguard.util.PersistentTaskExecutor;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 
 import static java.lang.System.Logger;
@@ -17,13 +15,14 @@ public class TunnelDeviceBond {
 	private final WireguardDevice device;
 	private final Tun tunnel;
 
-	public TunnelDeviceBond(WireguardDevice device, Tun tunnel) throws IOException {
+	public TunnelDeviceBond(WireguardDevice device, Tun tunnel) {
 		this.device = device;
 		this.tunnel = tunnel;
 	}
 
 	public void run() throws InterruptedException {
-		try (var sts = new PersistentTaskExecutor<>("TunnelDeviceBond", RuntimeException::new, logger)) {
+		// platform threads for performance
+		try (var sts = new PersistentTaskExecutor<>("TunnelDeviceBond", RuntimeException::new, logger, Thread.ofPlatform().factory())) {
 			sts.fork(() -> {
 				device.run();
 				return null;
@@ -31,15 +30,15 @@ public class TunnelDeviceBond {
 			sts.fork(() -> {
 				int mtu = tunnel.mtu();
 				while (!Thread.interrupted()) {
+					var buffer = device.getBufferPool().acquire(mtu);
+
 					try {
-						var buffer = ByteBuffer.allocateDirect(mtu); // TODO:  optimize
-
-						tunnel.read(buffer);
-						buffer.flip();
-
-						device.enqueueOnAll(buffer);
+						tunnel.read(buffer.buffer());
+						buffer.buffer().flip();
+						device.broadcastMessageOutwards(buffer);
 					} catch (IOException e) {
 						logger.log(WARNING, "Error reading from tunnel", e);
+						buffer.close();
 						break;
 					}
 				}
@@ -49,9 +48,8 @@ public class TunnelDeviceBond {
 
 			sts.fork(() -> {
 				while (!Thread.interrupted()) {
-					try {
-						var transport = device.receiveTransport().order(ByteOrder.BIG_ENDIAN);
-						tunnel.write(transport);
+					try (var transport = device.receiveIncomingTransport()) {
+						tunnel.write(transport.buffer());
 					} catch (IOException e) {
 						logger.log(WARNING, "Error writing to tunnel", e);
 					}

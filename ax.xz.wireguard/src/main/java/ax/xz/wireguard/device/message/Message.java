@@ -1,12 +1,14 @@
 package ax.xz.wireguard.device.message;
 
+import ax.xz.wireguard.device.BufferPool;
+
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 public sealed interface Message permits MessageCookieReply, MessageResponse, MessageTransport, MessageInitiation {
-	static Message parse(ByteBuffer buffer) throws InvalidMessageException  {
-		int type = buffer.duplicate().order(ByteOrder.LITTLE_ENDIAN).getInt();
+	static Message parse(BufferPool.BufferGuard buffer) throws InvalidMessageException  {
+		int type = buffer.buffer().duplicate().order(ByteOrder.LITTLE_ENDIAN).getInt();
 		return switch (type) {
 			case MessageInitiation.TYPE -> new MessageInitiation(buffer);
 			case MessageResponse.TYPE -> new MessageResponse(buffer);

@@ -1,5 +1,7 @@
 package ax.xz.wireguard.device.message;
 
+import ax.xz.wireguard.device.BufferPool;
+
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Objects;
@@ -13,39 +15,56 @@ import java.util.Objects;
  *     u8 encrypted_encapsulated_packet[]
  * }
  */
-public final class MessageTransport extends PooledMessage implements Message  {
+public final class MessageTransport implements Message, AutoCloseable  {
 	public static final int TYPE = 4;
 
-	MessageTransport(ByteBuffer buffer) {
-		super(buffer.remaining(), buffer);
+	private final BufferPool.BufferGuard bufferGuard;
 
-		if (buffer().getInt() != TYPE)
-			throw new IllegalArgumentException("Wrong type");
+	MessageTransport(BufferPool.BufferGuard buffer) {
+		this.bufferGuard = buffer;
 	}
 
 	public int receiver() {
-		return buffer().getInt(4);
+		return bufferGuard.buffer().getInt(4);
 	}
 
 	public long counter() {
-		return buffer().getLong(8);
+		return bufferGuard.buffer().getLong(8);
 	}
 
 	public ByteBuffer content() {
-		return buffer().duplicate().position(16);
+		return bufferGuard.buffer().position(16);
 	}
 
-	public static MessageTransport create(int receiverIndex, long counter, ByteBuffer encryptedData) {
-		Objects.requireNonNull(encryptedData);
+	public void setCounter(long counter) {
+		bufferGuard.buffer().putLong(8, counter);
+	}
 
-		var buffer = ByteBuffer.allocateDirect(4 + 4 + 8 + encryptedData.remaining());
+	/**
+	 * Returns a partially-initialised MessageTransport with the message type and receiver index filled in.
+	 * The counter and encrypted data must be filled in before sending.
+	 * @param bufferPool The buffer pool to use
+	 * @param encryptedDataSize The size of the encrypted data
+	 * @param receiverIndex The receiver index
+	 * @return A partially-initialised MessageTransport.  The underlying buffer must be released after use.
+	 */
+	public static MessageTransport createWithHeader(BufferPool bufferPool, int encryptedDataSize, int receiverIndex) {
+		var bg = bufferPool.acquire(4 + 4 + 8 + encryptedDataSize);
+		var buffer = bg.buffer();
 		buffer.order(ByteOrder.LITTLE_ENDIAN);
 		buffer.putInt(TYPE);
 		buffer.putInt(receiverIndex);
-		buffer.putLong(counter);
-		buffer.put(encryptedData);
-		buffer.flip();
+		buffer.putLong(0);
+		buffer.position(0);
 
-		return new MessageTransport(buffer);
+		return new MessageTransport(bg);
+	}
+
+	public BufferPool.BufferGuard bufferGuard() {
+		return bufferGuard;
+	}
+
+	public void close() {
+		bufferGuard.close();
 	}
 }

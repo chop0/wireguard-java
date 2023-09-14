@@ -11,57 +11,51 @@ import ax.xz.wireguard.noise.keys.NoisePrivateKey;
 import ax.xz.wireguard.noise.keys.NoisePublicKey;
 import ax.xz.wireguard.util.PersistentTaskExecutor;
 
+import javax.annotation.Nullable;
 import javax.crypto.BadPaddingException;
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
-import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.DatagramChannel;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.time.Duration;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.locks.Condition;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
 
 import static java.lang.System.Logger;
 import static java.lang.System.Logger.Level.*;
-import static java.lang.System.in;
 
 public final class WireguardDevice implements Closeable {
+	private static final Duration DEFAULT_KEEPALIVE_INTERVAL = Duration.ofSeconds(25);
+
 	public static final ScopedValue<WireguardDevice> CURRENT_DEVICE = ScopedValue.newInstance();
 
 	private static final Logger log = System.getLogger(WireguardDevice.class.getName());
 
 	private final NoisePrivateKey staticIdentity;
 
-	private final ConcurrentHashMap<NoisePublicKey, Peer> peers = new ConcurrentHashMap<>();
-	private final ConcurrentHashMap<Integer, Peer> peerSessionIndices = new ConcurrentHashMap<>();
-
-	private final Lock peerListLock = new ReentrantLock();
-	private final Condition peerCondition = peerListLock.newCondition();
-
+	private final PeerList peerList = new PeerList(this);
 
 	private final DatagramChannel datagramChannel;
 	private final Selector selector;
 
 	// a list of encrypted, incoming packets waiting to be sent up the protocol stack
-	private final LinkedBlockingQueue<ByteBuffer> inboundTransportQueue = new LinkedBlockingQueue<>(1024);
+	final LinkedBlockingQueue<BufferPool.BufferGuard> inboundTransportQueue = new LinkedBlockingQueue<>(1024);
+
+	// a list of encrypted, outgoing packets waiting to be sent out
+	final LinkedBlockingQueue<EnqueuedPacket> outboundTransportQueue = new LinkedBlockingQueue<>(1024);
 
 	private final AtomicInteger handshakeCounter = new AtomicInteger(0);
 	private final AtomicLong bytesSent = new AtomicLong(0);
 	private final AtomicLong bytesReceived = new AtomicLong(0);
 	private final AtomicLong dataSent = new AtomicLong(0);
 
-	private int receiveBufferSize = 0x1000;
+	private final BufferPool bufferPool = new BufferPool(0x1000, 0x200, 0x400);
+	private final int receiveBufferLength = 0x1000;
 
 	public WireguardDevice(NoisePrivateKey staticIdentity) {
 		this.staticIdentity = staticIdentity;
@@ -77,96 +71,13 @@ public final class WireguardDevice implements Closeable {
 		}
 	}
 
-	private final LinkedBlockingQueue<Peer> unstartedPeers = new LinkedBlockingQueue<>();
-
-	private void registerPeer(Peer newPeer) {
-		peerListLock.lock();
-
-		try {
-			var publicKey = newPeer.getRemoteStatic();
-			peers.put(publicKey, newPeer);
-			peerCondition.signalAll();
-
-			unstartedPeers.add(newPeer);
-			log.log(DEBUG, "Registered peer {0}", newPeer);
-		} finally {
-			peerListLock.unlock();
-		}
-	}
-
-	private void deregisterPeer(Peer peer) {
-		peerListLock.lock();
-
-		try {
-			var publicKey = peer.getRemoteStatic();
-			peers.remove(publicKey);
-			peerCondition.signalAll();
-		} finally {
-			peerListLock.unlock();
-		}
-	}
-
-	public void bind(SocketAddress endpoint) throws IOException {
-		datagramChannel.bind(endpoint);
-		log.log(DEBUG, "Bound to {0}", endpoint);
-	}
-
-	public void enqueueOnAll(ByteBuffer data) throws IOException {
-		for (var peer : peers.values()) {
-			peer.enqueueTransportPacket(data.duplicate());
-		}
-
-		dataSent.addAndGet((long) data.remaining() * peers.size());
-		data.position(data.limit());
-	}
-
-	public ByteBuffer receiveTransport() throws InterruptedException {
-		return inboundTransportQueue.take();
-	}
-
-	public void addPeer(NoisePublicKey publicKey, NoisePresharedKey noisePresharedKey, Duration keepaliveInterval, InetSocketAddress endpoint) {
-		var newPeer = new Peer(this, inboundTransportQueue, new Peer.PeerConnectionInfo(publicKey, noisePresharedKey, endpoint, keepaliveInterval));
-		registerPeer(newPeer);
-	}
-
-	public void addOrGetPeer(NoisePublicKey publicKey, Duration keepaliveInterval, InetSocketAddress endpoint) {
-		addPeer(publicKey, new NoisePresharedKey(new byte[NoisePresharedKey.LENGTH]), keepaliveInterval, endpoint);
-	}
-
-	public void setPeerSessionIndex(NoisePublicKey peerKey, int sessionIndex) {
-		var peer = peers.get(peerKey);
-		if (peerSessionIndices.put(sessionIndex, peer) == null) {
-			handshakeCounter.incrementAndGet();
-		}
-	}
-
-	public void clearSessionIndex(int sessionIndex) {
-		peerSessionIndices.remove(sessionIndex);
-	}
-
-	public NoisePrivateKey getStaticIdentity() {
-		return staticIdentity;
-	}
-
-	public int receiveBufferSize() {
-		return receiveBufferSize;
-	}
-
-	public void setReceiveBufferSize(int mtu) {
-		this.receiveBufferSize = mtu;
-	}
-
-	public void close() throws IOException {
-		datagramChannel.close();
-	}
-
 	public void run() {
 		ScopedValue.runWhere(CURRENT_DEVICE, this, () -> {
-			try (var outerExecutor = new PersistentTaskExecutor<>("Device executor", RuntimeException::new, log)) { // RuntimeException, since we don't expect this to recover
+			try (var outerExecutor = new PersistentTaskExecutor<>("Device executor", RuntimeException::new, log, Thread.ofPlatform().factory())) { // RuntimeException, since we don't expect this to recover
 				outerExecutor.submit("Inbound packet listener", () -> {
 					while (!Thread.interrupted()) {
 						try {
-							receive();
+							receiveMessageInwards();
 						} catch (Message.InvalidMessageException e) {
 							log.log(DEBUG, "Received invalid message", e);
 						} catch (IOException e) {
@@ -177,14 +88,17 @@ public final class WireguardDevice implements Closeable {
 					}
 				});
 
-				outerExecutor.submit("Peer starter", () -> {
-					try (var peerExecutor = new PeerExecutor()) {
-						while (!Thread.interrupted()) {
-							var peer = unstartedPeers.take();
-							peerExecutor.submit(peer);
-						}
+				outerExecutor.submit("Packet transmitter", () -> {
+					while (!Thread.interrupted()) {
+						var datagram = outboundTransportQueue.take();
 
-						peerExecutor.join();
+						try {
+							datagramChannel.send(datagram.data.buffer(), datagram.address);
+						} catch (IOException e) {
+							log.log(ERROR, "Error sending packet", e);
+						} finally {
+							datagram.data.close();
+						}
 					}
 				});
 
@@ -199,40 +113,28 @@ public final class WireguardDevice implements Closeable {
 		});
 	}
 
-	private class PeerExecutor extends StructuredTaskScope<Void> {
-		public PeerExecutor() {
-			super("Peer executor", Thread.ofVirtual().factory());
-		}
-
-		public void submit(Peer peer) {
-			Runnable peerRunnable = () -> {
-				try {
-					peer.start();
-				} finally {
-					log.log(DEBUG, "Peer {0} exited", peer);
-					deregisterPeer(peer);
-				}
-			};
-
-			fork(() -> {
-				Thread.currentThread().setName(peer.toString());
-				peerRunnable.run();
-				return null;
-			});
-		}
+	public void bind(SocketAddress endpoint) throws IOException {
+		datagramChannel.bind(endpoint);
+		log.log(DEBUG, "Bound to {0}", endpoint);
 	}
 
-	private void receive() throws IOException {
+	public void broadcastMessageOutwards(BufferPool.BufferGuard data) throws IOException {
+		peerList.broadcastMessageOutwards(data);
+	}
+
+	private void receiveMessageInwards() throws IOException {
 		try {
-			var buffer = ByteBuffer.allocateDirect(receiveBufferSize).order(ByteOrder.LITTLE_ENDIAN);
+			// RELEASED:  this buffer is wrapped in a Message and passed to handleMessage, which releases it
+			var bg = bufferPool.acquire(receiveBufferLength);
+			bg.buffer().order(ByteOrder.LITTLE_ENDIAN);
 
 			if (selector.select() > 0) {
-				var addr = datagramChannel.receive(buffer);
-				buffer.flip();
-				int recv = buffer.remaining();
+				var addr = datagramChannel.receive(bg.buffer());
+				bg.buffer().flip();
+				int recv = bg.buffer().remaining();
 				bytesReceived.addAndGet(recv);
 
-				handleMessage((InetSocketAddress) addr, Message.parse(buffer));
+				handleMessage((InetSocketAddress) addr, Message.parse(bg));
 				selector.selectedKeys().clear();
 			}
 		} catch (BadPaddingException e) {
@@ -240,50 +142,87 @@ public final class WireguardDevice implements Closeable {
 		}
 	}
 
+	/**
+	 * Returns a buffer containing a decrypted transport packet.
+	 * @return the buffer containing the decrypted transport packet.  The buffer must be released to this device's buffer pool after use.
+	 * @throws InterruptedException if the thread is interrupted while waiting for a peer to be available
+	 */
+	public BufferPool.BufferGuard receiveIncomingTransport() throws InterruptedException {
+		return inboundTransportQueue.take();
+	}
+
+	public void addPeer(NoisePublicKey publicKey, NoisePresharedKey noisePresharedKey, Duration keepaliveInterval, @Nullable InetSocketAddress endpoint) {
+		peerList.addPeer(publicKey, noisePresharedKey, keepaliveInterval, endpoint);
+	}
+
+	public int allocateNewSessionIndex(Peer peer) {
+		return peerList.allocateNewIndex(peer);
+	}
+
+	public NoisePrivateKey getStaticIdentity() {
+		return staticIdentity;
+	}
+
+	public void close() throws IOException {
+		datagramChannel.close();
+	}
+
+	/**
+	 * Handles a message received from the given address.
+	 * Will eventually release the buffer backing message back to the buffer pool.
+	 * @param address
+	 * @param message
+	 * @throws BadPaddingException
+	 */
 	private void handleMessage(InetSocketAddress address, Message message) throws BadPaddingException {
 		log.log(DEBUG, "Received message {0} from {1}", message, address);
-		var peer = switch (message) {
-			case MessageInitiation initiation -> createPeerFromInitiation(initiation);
-			case MessageTransport transport -> peerSessionIndices.get(transport.receiver());
-			case MessageResponse response -> peerSessionIndices.get(response.receiver());
+		switch (message) {
+			case MessageInitiation initiation -> {
+				var remoteStatic = Handshakes.decryptRemoteStatic(staticIdentity, initiation.ephemeral(), initiation.encryptedStatic(), initiation.encryptedTimestamp());
+				peerList.routeMessageInwards(address, remoteStatic, initiation);
+			}
+			case MessageTransport transport -> peerList.routeMessageInwards(address, transport.receiver(), transport);
+			case MessageResponse response -> peerList.routeMessageInwards(address, response.receiver(), response);
 			default -> throw new IllegalArgumentException("Unknown message type");
-		};
-
-		if (peer == null) {
-			log.log(DEBUG, "Received message for unknown peer");
-			return;
 		}
-
-		peer.receiveInboundMessage(address, message);
 	}
 
-	private Peer createPeerFromInitiation(MessageInitiation message) throws BadPaddingException {
-		var handshake = Handshakes.responderHandshake(staticIdentity, message.ephemeral(), message.encryptedStatic(), message.encryptedTimestamp());
-
-		var remoteStatic = handshake.getRemotePublicKey();
-		if (peers.containsKey(remoteStatic))
-			return peers.get(remoteStatic);
-
-		NoisePresharedKey presharedKey = new NoisePresharedKey(new byte[NoisePresharedKey.LENGTH]);
-		var newPeer = new Peer(this, inboundTransportQueue, new Peer.PeerConnectionInfo(remoteStatic, presharedKey, null, Duration.ofSeconds(30)));
-		registerPeer(newPeer);
-
-		return newPeer;
-	}
-
-	public int transmit(SocketAddress address, ByteBuffer data) throws IOException {
-		int sent = data.remaining();
-		datagramChannel.send(data, address);
+	/**
+	 * Sends a packet immediately, bypassing the queue
+	 *
+	 * @param address the address to send to
+	 * @param data    the data to send.  must be a buffer allocated from the buffer pool
+	 * @throws IOException if something goes wrong with the socket
+	 */
+	public void transmitNow(SocketAddress address, BufferPool.BufferGuard data) throws IOException {
+		int sent = data.buffer().remaining();
+		datagramChannel.send(data.buffer(), address);
+		data.close();
 		bytesSent.addAndGet(sent);
-		return sent;
+	}
+
+	/**
+	 * Enqueues a packet to be sent to the given address.
+	 * @param address the address to send to
+	 * @param data the data to send.  must be a buffer allocated from the buffer pool
+	 */
+	public void queueTransmit(SocketAddress address, BufferPool.BufferGuard data) {
+		outboundTransportQueue.offer(new EnqueuedPacket(address, data));
 	}
 
 	public DeviceStats getStats() {
-		return new DeviceStats(peers.size(), handshakeCounter.get(), bytesSent.get(), bytesReceived.get());
+		return new DeviceStats(peerList.peerCount(), handshakeCounter.get(), bytesSent.get(), bytesReceived.get());
+	}
+
+	public BufferPool getBufferPool() {
+		return bufferPool;
 	}
 
 	@Override
 	public String toString() {
 		return "Device[%s]".formatted(staticIdentity.publicKey().toString().substring(0, 8));
+	}
+
+	record EnqueuedPacket(SocketAddress address, BufferPool.BufferGuard data) {
 	}
 }

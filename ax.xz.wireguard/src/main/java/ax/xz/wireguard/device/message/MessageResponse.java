@@ -1,5 +1,6 @@
 package ax.xz.wireguard.device.message;
 
+import ax.xz.wireguard.device.BufferPool;
 import ax.xz.wireguard.noise.crypto.CookieGenerator;
 import ax.xz.wireguard.noise.crypto.Crypto;
 import ax.xz.wireguard.noise.keys.NoisePublicKey;
@@ -19,19 +20,20 @@ import java.nio.ByteOrder;
  *     u8 mac2[16]
  * }
  */
-public final class MessageResponse extends PooledMessage implements Message {
+public final class MessageResponse implements Message, AutoCloseable {
 	public static final int LENGTH = 4 + 4 + 4 + NoisePublicKey.LENGTH + Crypto.ChaChaPoly1305Overhead + Crypto.ChaChaPoly1305Overhead * 2;
 	public static final int TYPE = 2;
 
-	public MessageResponse(ByteBuffer buffer) {
-		super(LENGTH, buffer);
+	private final BufferPool.BufferGuard bufferGuard;
 
-		if (buffer().getInt() != TYPE)
-			throw new IllegalArgumentException("Wrong type (expected %d, got %d)".formatted(TYPE, buffer().getInt()));
+	MessageResponse(BufferPool.BufferGuard buffer) {
+		this.bufferGuard = buffer;
 	}
 
-	public static MessageResponse create(int localIndex, int remoteIndex, NoisePublicKey localEphemeral, byte[] encryptedEmpty, NoisePublicKey initiatorKey) {
-		var buffer = ByteBuffer.allocateDirect(LENGTH).order(ByteOrder.LITTLE_ENDIAN);
+	public static MessageResponse create(BufferPool bufferPool, int localIndex, int remoteIndex, NoisePublicKey localEphemeral, byte[] encryptedEmpty, NoisePublicKey initiatorKey) {
+		// RELEASED:  this method is called by HandshakeResponder#HandshakeResponder, which then calls transmitNow on the buffer, which releases it
+		var bg = bufferPool.acquire(LENGTH);
+		var buffer = bg.buffer().order(ByteOrder.LITTLE_ENDIAN);
 		buffer.putInt(TYPE);
 		buffer.putInt(localIndex);
 		buffer.putInt(remoteIndex);
@@ -41,27 +43,35 @@ public final class MessageResponse extends PooledMessage implements Message {
 		CookieGenerator.appendMacs(initiatorKey.data(), buffer);
 		buffer.flip();
 
-		return new MessageResponse(buffer);
+		return new MessageResponse(bg);
 	}
 
 
 	public int sender() {
-		return buffer().getInt(4);
+		return bufferGuard.buffer().getInt(4);
 	}
 
 	public int receiver() {
-		return buffer().getInt(8);
+		return bufferGuard.buffer().getInt(8);
 	}
 
 	public NoisePublicKey ephemeral() {
 		byte[] data = new byte[NoisePublicKey.LENGTH];
-		buffer().get(12, data);
+		bufferGuard.buffer().get(12, data);
 		return new NoisePublicKey(data);
 	}
 
 	public byte[] encryptedEmpty() {
 		byte[] encryptedEmpty = new byte[Crypto.ChaChaPoly1305Overhead];
-		buffer().get(12 + NoisePublicKey.LENGTH, encryptedEmpty);
+		bufferGuard.buffer().get(12 + NoisePublicKey.LENGTH, encryptedEmpty);
 		return encryptedEmpty;
+	}
+
+	public void close() {
+		bufferGuard.close();
+	}
+
+	public BufferPool.BufferGuard bufferGuard() {
+		return bufferGuard;
 	}
 }

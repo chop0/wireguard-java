@@ -11,6 +11,8 @@ services:
         cap_add:
             - NET_ADMIN
             - SYS_ADMIN
+        sysctls:
+            - net.ipv6.conf.all.disable_ipv6=0
         restart: unless-stopped
         networks:
             - wireguard-network
@@ -19,7 +21,7 @@ services:
         devices:
             - /dev/net/tun:/dev/net/tun
         command:
-            - -agentpath:/libasyncProfiler.so=start,alluser,event=cpu,file=/profiling/profile.jfr,interval=10000000,timeout=60
+            - -agentpath:/libasyncProfiler.so=start,alluser,event=cpu,file=/profiling/profile-server.jfr,interval=10000000,timeout=60
 
     iperf3-server:
         image: networkstatic/iperf3
@@ -35,9 +37,12 @@ services:
         volumes:
             - ./client.conf:/wireguard.conf
             - ./entrypoint_client.sh:/entrypoint_routing.sh
+            - ./profiling:/profiling
         cap_add:
             - NET_ADMIN
             - SYS_ADMIN
+        sysctls:
+            - net.ipv6.conf.all.disable_ipv6=0
         restart: unless-stopped
         networks:
             - wireguard-network
@@ -45,7 +50,8 @@ services:
             - seccomp:unconfined
         devices:
             - /dev/net/tun:/dev/net/tun
-
+        command:
+            - -agentpath:/libasyncProfiler.so=start,alluser,event=cpu,file=/profiling/profile-client.jfr,interval=10000000,timeout=60
     wireguard-client-iperf3:
         image: networkstatic/iperf3
         command: -c iperf3-server -t 120 -P 16

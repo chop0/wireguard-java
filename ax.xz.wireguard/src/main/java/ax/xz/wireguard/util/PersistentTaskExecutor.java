@@ -6,6 +6,7 @@ import static java.lang.System.Logger.Level.*;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.util.concurrent.StructuredTaskScope;
+import java.util.concurrent.ThreadFactory;
 import java.util.function.Function;
 
 /**
@@ -27,8 +28,8 @@ public class PersistentTaskExecutor<E extends Throwable> extends StructuredTaskS
 	private final Function<? super Throwable, ? extends E> exceptionMapper;
 	private final Logger logger;
 
-	public PersistentTaskExecutor(String name, Function<? super Throwable, ? extends E> exceptionMapper, Logger logger) {
-		super(name, Thread.ofVirtual().factory());
+	public PersistentTaskExecutor(String name, Function<? super Throwable, ? extends E> exceptionMapper, Logger logger, ThreadFactory threadFactory) {
+		super(name, threadFactory);
 		this.exceptionMapper = exceptionMapper;
 		this.logger = logger;
 	}

@@ -15,7 +15,6 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -26,8 +25,10 @@ final class SessionManager {
 	private static final int HANDSHAKE_ATTEMPTS = 5;
 
 	private Logger logger;
-	// The lock behind which all peer state is stored
 
+	private final Peer peer;
+
+	// The lock behind which all peer state is stored
 	private final ReentrantLock lock = new ReentrantLock();
 	// The condition that is signalled when the peer state is modified
 	private final Condition sessionCondition = lock.newCondition();
@@ -47,8 +48,8 @@ final class SessionManager {
 	// The current session.  Null iff no session is established and a handshake has not begun. This is private by peerLock.
 	private EstablishedSession session;
 
-
-	SessionManager(WireguardDevice device, Peer.PeerConnectionInfo connectionInfo) {
+	SessionManager(Peer peer, WireguardDevice device, Peer.PeerConnectionInfo connectionInfo) {
+		this.peer = peer;
 		this.connectionInfo = connectionInfo;
 		this.device = device;
 	}
@@ -56,7 +57,7 @@ final class SessionManager {
 	public void run() {
 		logger = System.getLogger("[%s] %s".formatted(Peer.PEER.get(), SessionManager.class.getSimpleName()));
 
-		try (var executor = new PersistentTaskExecutor<>("Session workers", IOException::new, logger)) {
+		try (var executor = new PersistentTaskExecutor<>("Session workers", IOException::new, logger, Thread.ofVirtual().factory())) {
 			executor.submit("Session initiation thread", this::sessionInitiationThread);
 			executor.submit("Handshake responder thread", this::handshakeResponderThread);
 			executor.submit("Keepalive thread", this::keepaliveThread);
@@ -110,7 +111,6 @@ final class SessionManager {
 			Thread.currentThread().interrupt();
 		} catch (Exception e) {
 			logger.log(ERROR, "Keepalive worker failed", e);
-			throw e;
 		} finally {
 			lock.unlock();
 			logger.log(DEBUG, "Keepalive worker shutting down");
@@ -135,16 +135,19 @@ final class SessionManager {
 
 	@GuardedBy("lock")
 	private void handleNextInitiation() throws InterruptedException {
+		var message = inboundHandshakeInitiationQueue.take();
+
 		try {
-			var message = inboundHandshakeInitiationQueue.take();
 			var initiation = message.getKey();
 			var origin = message.getValue();
 
-			setSession(HandshakeResponder.respond(device, initiation, connectionInfo.keepaliveInterval(), origin, getNewSessionIndex()));
+			setSession(HandshakeResponder.respond(device, initiation, connectionInfo.keepaliveInterval(), origin, device.allocateNewSessionIndex(peer)));
 			logger.log(INFO, "Completed handshake (responder)");
 		} catch (IOException e) {
 			logger.log(WARNING, "Failed to complete handshake (responder)", e);
 			killSession();
+		} finally {
+			message.getKey().close();
 		}
 	}
 
@@ -158,7 +161,7 @@ final class SessionManager {
 			logger.log(INFO, "Initiating handshake with {0} (try {1} of {2})", connectionInfo, i + 1, HANDSHAKE_ATTEMPTS);
 
 			try {
-				var initiator = HandshakeInitiator.initiate(device, connectionInfo, getNewSessionIndex());
+				var initiator = HandshakeInitiator.initiate(device, connectionInfo, device.allocateNewSessionIndex(peer));
 
 				MessageResponse response;
 				try {
@@ -168,8 +171,12 @@ final class SessionManager {
 					continue;
 				}
 
-				initiator.consumeResponse(response);
-				setSession(initiator.getSession());
+				try {
+					initiator.consumeResponse(response);
+					setSession(initiator.getSession());
+				} finally {
+					response.close();
+				}
 
 				logger.log(INFO, "Completed handshake (initiator)");
 				break;
@@ -180,19 +187,16 @@ final class SessionManager {
 	}
 
 	@GuardedBy("lock")
-	private void sendKeepaliveIfNeeded() throws InterruptedException {
+	private void sendKeepaliveIfNeeded() throws InterruptedException, IOException {
 		if (session != null && session.needsKeepalive()) {
-			try {
-				session.sendKeepalive(device);
-				logger.log(DEBUG, "Sent keepalive");
-			} catch (IOException e) {
-				logger.log(WARNING, "Keepalive failed", e);
-			}
+			session.sendKeepalive(device);
+			logger.log(DEBUG, "Sent keepalive");
 		}
 	}
 
 	/**
-	 * Enqueues an inbound handshake response message to be processed
+	 * Enqueues an inbound handshake response message to be processed.
+	 * Eventually releases the buffer backing `message` when done with it
 	 *
 	 * @param message the message to enqueue
 	 */
@@ -207,7 +211,8 @@ final class SessionManager {
 	}
 
 	/**
-	 * Enqueues an inbound handshake initiation message to be processed
+	 * Enqueues an inbound handshake initiation message to be processed.
+	 * Releases the transport buffer when done with it
 	 *
 	 * @param address                         the address the message was received from
 	 * @param messageInitiationInboundMessage the message to enqueue
@@ -227,14 +232,7 @@ final class SessionManager {
 	 */
 	@GuardedBy("lock")
 	private void setSession(@Nullable EstablishedSession session) {
-		if (this.session != null)
-			device.clearSessionIndex(this.session.localIndex());
-
 		this.session = session;
-
-		if (session != null)
-			device.setPeerSessionIndex(connectionInfo.remoteStatic(), session.localIndex());
-
 		sessionCondition.signalAll();
 	}
 
@@ -253,24 +251,6 @@ final class SessionManager {
 	@GuardedBy("lock")
 	private void killSession() {
 		setSession(null);
-	}
-
-	/**
-	 * Allocates a new local session index and sets it in the device.
-	 *
-	 * @return the new local session index
-	 */
-	private int getNewSessionIndex() {
-		class SessionIndex {
-			private static final AtomicInteger nextSessionIndex = new AtomicInteger(0);
-
-			private SessionIndex() {
-			}
-		}
-
-		int localIndex = SessionIndex.nextSessionIndex.getAndIncrement();
-		device.setPeerSessionIndex(connectionInfo.remoteStatic(), localIndex);
-		return localIndex;
 	}
 
 	private void cleanup() {

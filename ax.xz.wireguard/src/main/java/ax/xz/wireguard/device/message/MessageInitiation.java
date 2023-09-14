@@ -1,5 +1,6 @@
 package ax.xz.wireguard.device.message;
 
+import ax.xz.wireguard.device.BufferPool;
 import ax.xz.wireguard.noise.crypto.CookieGenerator;
 import ax.xz.wireguard.noise.crypto.Crypto;
 import ax.xz.wireguard.noise.keys.NoisePublicKey;
@@ -9,16 +10,20 @@ import java.nio.ByteOrder;
 import java.util.Arrays;
 import java.util.Objects;
 
-public final class MessageInitiation extends PooledMessage implements Message {
+public final class MessageInitiation implements Message, AutoCloseable {
 	public static final int TYPE = 1;
 	public static final int LENGTH = 4 + 4 + NoisePublicKey.LENGTH + Crypto.ChaChaPoly1305Overhead + NoisePublicKey.LENGTH + Crypto.ChaChaPoly1305Overhead + Crypto.TIMESTAMP_LENGTH + Crypto.ChaChaPoly1305Overhead * 2;
 
-	MessageInitiation(ByteBuffer buffer) {
-		super(LENGTH, buffer);
+	private final BufferPool.BufferGuard bufferGuard;
+	
+	MessageInitiation(BufferPool.BufferGuard buffer) {
+		this.bufferGuard = buffer;
 	}
 
-	public static MessageInitiation create(int sender, NoisePublicKey ephemeral, byte[] encryptedStatic, byte[] encryptedTimestamp) {
-		var buffer = ByteBuffer.allocateDirect(LENGTH).order(ByteOrder.LITTLE_ENDIAN);
+	public static MessageInitiation create(BufferPool bufferPool, int sender, NoisePublicKey ephemeral, byte[] encryptedStatic, byte[] encryptedTimestamp) {
+		// RELEASED:  called by HandshakeInitiator#HandshakeInitiator, which then calls transmitNow on the buffer, which releases it
+		var bg = bufferPool.acquire(LENGTH);
+		var buffer = bg.buffer().order(ByteOrder.LITTLE_ENDIAN);
 
 		buffer.putInt(TYPE);
 		buffer.putInt(sender);
@@ -28,47 +33,39 @@ public final class MessageInitiation extends PooledMessage implements Message {
 		buffer.position(buffer.position() + Crypto.ChaChaPoly1305Overhead * 2); // skip macs
 		buffer.flip();
 
-		return new MessageInitiation(buffer);
+		return new MessageInitiation(bg);
 	}
 
-	public ByteBuffer getSignedBuffer(NoisePublicKey remoteStatic) {
-		var buffer = buffer().position(LENGTH - Crypto.ChaChaPoly1305Overhead * 2).limit(LENGTH);
+	public BufferPool.BufferGuard getSignedBuffer(NoisePublicKey remoteStatic) {
+		var buffer = this.bufferGuard.buffer().position(LENGTH - Crypto.ChaChaPoly1305Overhead * 2).limit(LENGTH);
 		if (buffer.remaining() < 32)
 			throw new IllegalArgumentException("Buffer needs 32 bytes remaining for the macs");
 
 		CookieGenerator.appendMacs(remoteStatic.data(), buffer);
 
 		buffer.flip();
-		return buffer;
-	}
-
-	public static MessageInitiation from(ByteBuffer buffer) {
-		int type = buffer.getInt(0);
-		if (type != TYPE)
-			throw new IllegalArgumentException("Wrong type: " + type);
-
-		return new MessageInitiation(buffer);
+		return bufferGuard;
 	}
 
 	public int sender() {
-		return buffer().getInt(4);
+		return bufferGuard.buffer().getInt(4);
 	}
 
 	public NoisePublicKey ephemeral() {
 		byte[] ephemeral = new byte[NoisePublicKey.LENGTH];
-		buffer().duplicate().position(8).get(ephemeral);
+		bufferGuard.buffer().duplicate().position(8).get(ephemeral);
 		return new NoisePublicKey(ephemeral);
 	}
 
 	public byte[] encryptedStatic() {
 		byte[] encryptedStatic = new byte[NoisePublicKey.LENGTH + Crypto.ChaChaPoly1305Overhead];
-		buffer().duplicate().position(8 + NoisePublicKey.LENGTH).get(encryptedStatic);
+		bufferGuard.buffer().duplicate().position(8 + NoisePublicKey.LENGTH).get(encryptedStatic);
 		return encryptedStatic;
 	}
 
 	public byte[] encryptedTimestamp() {
 		byte[] encryptedTimestamp = new byte[Crypto.TIMESTAMP_LENGTH + Crypto.ChaChaPoly1305Overhead];
-		buffer().duplicate().position(8 + NoisePublicKey.LENGTH + NoisePublicKey.LENGTH + Crypto.ChaChaPoly1305Overhead).get(encryptedTimestamp);
+		bufferGuard.buffer().duplicate().position(8 + NoisePublicKey.LENGTH + NoisePublicKey.LENGTH + Crypto.ChaChaPoly1305Overhead).get(encryptedTimestamp);
 		return encryptedTimestamp;
 	}
 
@@ -97,4 +94,7 @@ public final class MessageInitiation extends PooledMessage implements Message {
 			   "encryptedTimestamp=" + Arrays.toString(encryptedTimestamp()) + ']';
 	}
 
+	public void close() {
+		bufferGuard.close();
+	}
 }

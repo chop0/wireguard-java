@@ -1,5 +1,6 @@
 package ax.xz.wireguard.device.peer;
 
+import ax.xz.wireguard.device.BufferPool;
 import ax.xz.wireguard.device.WireguardDevice;
 import ax.xz.wireguard.device.message.Message;
 import ax.xz.wireguard.device.message.MessageInitiation;
@@ -7,20 +8,18 @@ import ax.xz.wireguard.device.message.MessageResponse;
 import ax.xz.wireguard.device.message.MessageTransport;
 import ax.xz.wireguard.noise.keys.NoisePresharedKey;
 import ax.xz.wireguard.noise.keys.NoisePublicKey;
-import ax.xz.wireguard.util.PersistentTaskExecutor;
 
 import javax.annotation.Nullable;
-import javax.crypto.ShortBufferException;
-import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.nio.ByteBuffer;
 import java.time.Duration;
-import java.util.concurrent.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.function.Function;
 
 import static java.lang.System.Logger;
-import static java.lang.System.Logger.Level.*;
+import static java.lang.System.Logger.Level.DEBUG;
+import static java.lang.System.Logger.Level.WARNING;
 import static java.util.Objects.requireNonNull;
 
 public class Peer {
@@ -29,22 +28,22 @@ public class Peer {
 	private static final Logger logger = System.getLogger(Peer.class.getName());
 
 	// a queue of transport messages that have been decrypted and need to be sent up the stack
-	private final LinkedBlockingQueue<ByteBuffer> inboundTransportQueue;
-
+	private final LinkedBlockingQueue<BufferPool.BufferGuard> inboundTransportQueue;
 	private final PeerConnectionInfo connectionInfo;
+	private final WireguardDevice device;
+	private final BufferPool bufferPool;
 
 	private final SessionManager sessionManager;
-	private final WireguardDevice device;
 
 	private final AtomicBoolean started = new AtomicBoolean(false);
 
-	public Peer(WireguardDevice device, LinkedBlockingQueue<ByteBuffer> inboundTransportQueue, PeerConnectionInfo connectionInfo) {
+	public Peer(WireguardDevice device, LinkedBlockingQueue<BufferPool.BufferGuard> inboundTransportQueue, PeerConnectionInfo connectionInfo, BufferPool bufferPool) {
 		this.inboundTransportQueue = inboundTransportQueue;
 		this.connectionInfo = connectionInfo;
 		this.device = device;
+		this.bufferPool = bufferPool;
 
-		this.sessionManager = new SessionManager(device, connectionInfo);
-		logger.log(DEBUG, "Created peer {0}", this);
+		this.sessionManager = new SessionManager(this, device, connectionInfo);
 	}
 
 	public void start() {
@@ -52,6 +51,7 @@ public class Peer {
 			throw new IllegalStateException("Peer already started");
 		}
 
+		logger.log(DEBUG, "Started peer {0}", this);
 		ScopedValue.runWhere(PEER, this, sessionManager::run);
 	}
 
@@ -59,6 +59,12 @@ public class Peer {
 		return connectionInfo.remoteStatic;
 	}
 
+	/**
+	 * Processes an inbound message from the peer.
+	 * Releases the buffer backing the message when done with it
+	 * @param address the address the message was received from
+	 * @param message the message to process.  must be allocated from the device's buffer pool
+	 */
 	public void receiveInboundMessage(InetSocketAddress address, Message message) {
 		switch (message) {
 			case MessageTransport transport -> receiveTransport(transport);
@@ -71,7 +77,8 @@ public class Peer {
 	private static final ExecutorService packetProcessor = ForkJoinPool.commonPool();
 
 	/**
-	 * Enqueues an inbound transport message to be processed
+	 * Enqueues an inbound transport message to be processed.
+	 * Releases the transport buffer when done with it
 	 *
 	 * @param transport the transport message to enqueue
 	 */
@@ -82,57 +89,45 @@ public class Peer {
 		if (currentSession == null)
 			return;
 
-		packetProcessor.execute(() -> decryptAndEnqueue(new Peer.TransportWithSession(transport, currentSession)));
+		packetProcessor.execute(() -> decryptAndEnqueue(transport, currentSession));
 	}
 
 	/**
 	 * Sends the given transport data to the peer.
 	 *
 	 * @param data data to send
-	 * @throws IOException if no session is established or something is wrong with the socket
 	 */
-	public void enqueueTransportPacket(ByteBuffer data) {
+	public void enqueueTransportPacket(BufferPool.BufferGuard data) {
 		packetProcessor.execute(() -> {
 			var session = sessionManager.tryGetSessionNow();
 			if (session == null)
 				return;
 
-			session.enqueueTransportPacket(device, data);
+			var result = session.createTransportPacket(data.buffer());
+			data.close();
+			device.queueTransmit(session.getOutboundPacketAddress(), result.bufferGuard());
 		});
 	}
 
 	/**
-	 * Decrypts a transport message and enqueues it for reading
-	 *
-	 * @param inb the transport message to decrypt
+	 * Decrypts a transport message and enqueues it for reading.  Releases the transport buffer when done with it
 	 */
-	private void decryptAndEnqueue(TransportWithSession inb) {
-		int packetSize = inb.transport().content().remaining();
+	private void decryptAndEnqueue(MessageTransport transport, EstablishedSession session) {
 		try {
-			if (inb.session() == null)
-				return;
-
-			if (inb.transport().content().remaining() < 16) {
+			if (transport.content().remaining() < 16) {
 				logger.log(WARNING, "Received transport message with invalid length");
 				return;
 			}
 
-			var result = ByteBuffer.allocate(inb.transport().content().remaining() - 16);
-			inb.session().decryptTransportPacket(inb.transport(), result);
-			result.flip();
+			var result = bufferPool.acquire(transport.content().remaining() - 16);
+			session.decryptTransportPacket(transport, result.buffer());
+			result.buffer().flip();
+			transport.close();
 
-			if (result.remaining() == 0) {
+			if (result.buffer().remaining() == 0) {
 				logger.log(DEBUG, "Received keepalive");
 			} else
 				inboundTransportQueue.add(result);
-
-		} catch (ShortBufferException e) {
-			int minimumSize = (int) (packetSize * 1.5);
-
-			if (device.receiveBufferSize() < minimumSize) {
-				logger.log(INFO, "Growing receive buffer");
-				device.setReceiveBufferSize((int) (packetSize * 1.5));
-			}
 		} catch (Throwable e) {
 			logger.log(WARNING, "Error decrypting transport message", e);
 		}
@@ -144,15 +139,26 @@ public class Peer {
 		return String.format("Peer{%s, pubkey %s}", getAuthority(), connectionInfo.remoteStatic.toString().substring(0, 8));
 	}
 
+	@Override
+	public int hashCode() {
+		return connectionInfo.remoteStatic.hashCode();
+	}
+
+	@Override
+	public boolean equals(Object obj) {
+		if (obj instanceof Peer peer) {
+			return connectionInfo.remoteStatic.equals(peer.connectionInfo.remoteStatic);
+		} else {
+			return false;
+		}
+	}
+
 	public String getAuthority() {
 		var session = sessionManager.tryGetSessionNow();
 		if (session == null)
 			return "unknown";
 
 		return session.getOutboundPacketAddress().toString();
-	}
-
-	record TransportWithSession(MessageTransport transport, EstablishedSession session) {
 	}
 
 	public record PeerConnectionInfo(NoisePublicKey remoteStatic, @Nullable NoisePresharedKey presharedKey,
