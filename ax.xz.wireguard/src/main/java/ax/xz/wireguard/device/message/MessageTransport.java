@@ -33,7 +33,7 @@ public final class MessageTransport implements Message, AutoCloseable  {
 	}
 
 	public ByteBuffer content() {
-		return bufferGuard.buffer().position(16);
+		return bufferGuard.buffer().duplicate().position(16);
 	}
 
 	public void setCounter(long counter) {

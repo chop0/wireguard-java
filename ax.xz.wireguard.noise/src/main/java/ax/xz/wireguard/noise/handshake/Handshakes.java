@@ -144,11 +144,7 @@ public class Handshakes {
 			}
 			updateHMAC(hash, encryptedEmpty);
 
-			// create send/receive keys
-			var sendKey = new SecretKeySpec(deriveKey(chainKey, new byte[0], 1), "ChaCha20-Poly1305");
-			var receiveKey = new SecretKeySpec(deriveKey(chainKey, new byte[0], 2), "ChaCha20-Poly1305");
-
-			var kp = new SymmetricKeypair(sendKey, receiveKey);
+			var kp = new SymmetricKeypair(deriveKey(chainKey, new byte[0], 1), deriveKey(chainKey, new byte[0], 2));
 
 			logger.log(DEBUG, "DH key exchange completed");
 			return kp;
@@ -287,11 +283,7 @@ public class Handshakes {
 				throw new RuntimeException(e);
 			}
 			updateHMAC(hash, encryptedEmpty);
-
-			var sendKey = new SecretKeySpec(deriveKey(chainKey, new byte[0], 2), "ChaCha20-Poly1305");
-			var receiveKey = new SecretKeySpec(deriveKey(chainKey, new byte[0], 1), "ChaCha20-Poly1305");
-
-			return new SymmetricKeypair(sendKey, receiveKey);
+			return new SymmetricKeypair(deriveKey(chainKey, new byte[0], 2), deriveKey(chainKey, new byte[0], 1));
 		}
 
 		public SymmetricKeypair getKeypair() {

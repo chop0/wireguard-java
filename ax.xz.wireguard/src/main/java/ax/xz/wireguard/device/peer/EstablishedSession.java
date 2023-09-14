@@ -41,7 +41,6 @@ final class EstablishedSession {
 			var transport = MessageTransport.createWithHeader(bufferPool, unencryptedData.remaining() + 16, remoteIndex);
 			long counter = cipher(unencryptedData, transport.content());
 			transport.setCounter(counter);
-			transport.bufferGuard().buffer().flip();
 
 			return transport;
 		} catch (ShortBufferException e) {

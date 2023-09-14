@@ -1,5 +1,7 @@
 package ax.xz.wireguard.noise.handshake;
 
+import ax.xz.wireguard.noise.crypto.Poly1305;
+
 import javax.crypto.*;
 import javax.crypto.spec.IvParameterSpec;
 import java.nio.ByteBuffer;
@@ -7,6 +9,7 @@ import java.nio.ByteOrder;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
+import java.util.Arrays;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -16,77 +19,33 @@ import static java.lang.System.Logger.Level.INFO;
 public final class SymmetricKeypair {
 	private static final System.Logger log = System.getLogger(SymmetricKeypair.class.getName());
 
-	private final SecretKey sendKey;
-	private final SecretKey receiveKey;
+	private final byte[] sendKey;
+	private final byte[] receiveKey;
 
 	private final AtomicLong sendCounter = new AtomicLong(0);
 
-	SymmetricKeypair(SecretKey sendKey, SecretKey receiveKey) {
+	SymmetricKeypair(byte[] sendKey, byte[] receiveKey) {
 		this.sendKey = sendKey;
 		this.receiveKey = receiveKey;
 	}
 
-	private static final ConcurrentLinkedQueue<Cipher> cipherPool = new ConcurrentLinkedQueue<>();
-	private Cipher getCipher() {
-		var cipher = cipherPool.poll();
-		if (cipher == null) {
-			try {
-				cipher = Cipher.getInstance("ChaCha20-Poly1305");
-			} catch (NoSuchAlgorithmException | NoSuchPaddingException e) {
-				throw new RuntimeException(e);
-			}
-		}
-		return cipher;
-	}
-
-	private void releaseCipher(Cipher cipher) {
-		cipherPool.add(cipher);
-	}
-
-
-	public long cipher(ByteBuffer src, ByteBuffer dst) throws ShortBufferException {
+	public long cipher(ByteBuffer src, ByteBuffer dst) {
 		var nonce = sendCounter.getAndIncrement();
 		var nonceBytes = new byte[ChaChaPoly1305NonceSize];
 		ByteBuffer.wrap(nonceBytes).order(ByteOrder.LITTLE_ENDIAN).position(4).putLong(nonce);
 
-		var cipher = getCipher();
-		try {
-			cipher.init(Cipher.ENCRYPT_MODE, sendKey, new IvParameterSpec(nonceBytes));
-			cipher.doFinal(src, dst);
-		} catch (
-			IllegalBlockSizeException |
-			BadPaddingException |
-			InvalidAlgorithmParameterException |
-			InvalidKeyException e
-		) {
-			throw new RuntimeException(e);
-		} finally {
-			releaseCipher(cipher);
-		}
+		int srcLength = src.remaining();
+		Poly1305.poly1305AeadEncrypt(new byte[0], sendKey, nonceBytes, src, dst.slice(dst.position(), srcLength), dst.slice(dst.position() + srcLength, 16));
+		dst.position(dst.position() + srcLength + 16);
 
 		return nonce;
 	}
 
-	public void decipher(long counter, ByteBuffer src, ByteBuffer dst) throws BadPaddingException, ShortBufferException {
+	public void decipher(long counter, ByteBuffer src, ByteBuffer dst) throws BadPaddingException {
 		var nonceBytes = new byte[ChaChaPoly1305NonceSize];
 		ByteBuffer.wrap(nonceBytes).order(ByteOrder.LITTLE_ENDIAN).position(4).putLong(counter);
-
-		var oldSrcLimit = src.remaining();
-		var oldDstLimit = dst.remaining();
-
-		var cipher = getCipher();
-		try {
-			cipher.init(Cipher.DECRYPT_MODE, receiveKey, new IvParameterSpec(nonceBytes));
-			cipher.doFinal(src, dst);
-		} catch (ShortBufferException | InvalidKeyException | InvalidAlgorithmParameterException e) {
-			throw new IllegalArgumentException(e);
-		} catch (IllegalBlockSizeException e) {
-			throw new Error("unexpected error (we're using a stream cipher)", e);
-		} catch (AEADBadTagException ex) {
-			log.log(INFO, "counter is {0}, src.remaining() is {1}, dst.remaining() is {2}", counter, oldSrcLimit, oldDstLimit);
-			throw ex;
-		} finally {
-			releaseCipher(cipher);
-		}
+		Poly1305.poly1305AeadDecrypt(new byte[0], receiveKey, nonceBytes, src.slice(src.position(), src.limit() - src.position() - 16), dst, src.slice(src.limit() - 16, 16));
+		src.position(src.limit());
+		dst.position(dst.limit());
 	}
 }
