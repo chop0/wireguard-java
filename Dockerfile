@@ -1,10 +1,14 @@
-FROM openjdk:21-slim as build-java
+FROM ghcr.io/graalvm/graalvm-community:20 as build-java
 
-COPY . /src
+COPY ./jsr305-3.0.2.jar /src/jsr305-3.0.2.jar
+COPY ./ax.xz.raw/src/main/java /src/ax.xz.raw/src/main/java
+COPY ./ax.xz.raw.posix/src/main/java /src/ax.xz.raw.posix/src/main/java
+COPY ./ax.xz.wireguard/src/main/java /src/ax.xz.wireguard/src/main/java
+COPY ./ax.xz.wireguard.noise/src/main/java /src/ax.xz.wireguard.noise/src/main/java
 RUN mkdir -p /build
 
 RUN jdeps --generate-module-info /build /src/jsr305-3.0.2.jar && cd /build/jsr305 && javac /build/jsr305/module-info.java --patch-module jsr305=/src/jsr305-3.0.2.jar && jar xf /src/jsr305-3.0.2.jar && rm -f /build/jsr305/module-info.java
-RUN javac --enable-preview --source 21 -p /build -d /build --module-source-path '/src/*/src/main/java' -m ax.xz.wireguard.noise,ax.xz.raw,ax.xz.raw.posix,ax.xz.wireguard
+RUN javac --enable-preview --release 20 -p /build -d /build --module-source-path '/src/*/src/main/java' -m ax.xz.raw,ax.xz.raw.posix,ax.xz.wireguard,ax.xz.wireguard.noise
 
 FROM alpine:3.18.3 as build-native
 RUN --mount=type=cache,target=/var/cache/apk apk update && apk add cmake ninja build-base linux-headers
@@ -13,20 +17,19 @@ COPY ./CMakeLists.txt /build/CMakeLists.txt
 COPY ./ax.xz.raw.posix/src/main/c /build/ax.xz.raw.posix/src/main/c
 WORKDIR /build
 
-COPY --from=openjdk:21-bookworm /usr/local/openjdk-21/include /usr/local/openjdk-21/include
-RUN JAVA_HOME=/usr/local/openjdk-21 cmake -DCMAKE_C_FLAGS="-nostdlib -l:libc.a" -GNinja .
+COPY --from=ghcr.io/graalvm/graalvm-community:20 /opt/graalvm-community-java20/include /opt/graalvm-community-java20/include
+RUN JAVA_HOME=/opt/graalvm-community-java20 cmake -DCMAKE_C_FLAGS="-nostdlib -l:libc.a" -GNinja .
 RUN ninja -j$(nproc) libposix_raw.so
 
-FROM openjdk:21-slim as profiler-build
-RUN apt update && apt install -y build-essential git
+FROM ghcr.io/graalvm/graalvm-community:20 as profiler-build
+RUN microdnf install -y cmake make git
 RUN git clone https://github.com/async-profiler/async-profiler /src
 RUN cd /src && make
 RUN mkdir /out && cp /src/build/lib/* /out/ && cp /src/build/bin/* /out/
 
-FROM openjdk:21-slim as runtime
-RUN --mount=type=cache,target=/var/cache/apt apt update && apt install -y iproute2 iptables iperf3 iputils-ping net-tools tcpdump wget
+FROM ghcr.io/graalvm/graalvm-community:20 as runtime
+RUN microdnf install -y iproute iptables iperf3 iputils net-tools tcpdump wget
 
-RUN mkdir /app
 WORKDIR /app
 
 RUN mkdir -p /usr/share/java
