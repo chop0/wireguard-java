@@ -22,6 +22,7 @@ import java.nio.channels.DatagramChannel;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.time.Duration;
+import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -40,10 +41,10 @@ public final class WireguardDevice implements Closeable {
 	private final Selector selector;
 
 	// a list of encrypted, incoming packets waiting to be sent up the protocol stack
-	final LinkedBlockingQueue<BufferPool.BufferGuard> inboundTransportQueue = new LinkedBlockingQueue<>(1024);
+	final LinkedBlockingQueue<BufferPool.BufferGuard> inboundTransportQueue = new LinkedBlockingQueue<>(ForkJoinPool.getCommonPoolParallelism() * 1024);
 
 	// a list of encrypted, outgoing packets waiting to be sent out
-	final LinkedBlockingQueue<EnqueuedPacket> outboundTransportQueue = new LinkedBlockingQueue<>(1024);
+	final LinkedBlockingQueue<EnqueuedPacket> outboundTransportQueue = new LinkedBlockingQueue<>(ForkJoinPool.getCommonPoolParallelism() * 1024);
 
 	private final AtomicInteger handshakeCounter = new AtomicInteger(0);
 	private final AtomicLong bytesSent = new AtomicLong(0);
