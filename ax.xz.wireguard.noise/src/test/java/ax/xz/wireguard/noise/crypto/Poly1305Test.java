@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import javax.crypto.AEADBadTagException;
 import javax.crypto.spec.SecretKeySpec;
+import java.lang.foreign.MemorySegment;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
@@ -87,7 +88,7 @@ public class Poly1305Test {
 				byte[] serializedKey = new byte[1024];
 				int[] state = new int[16];
 				ChaCha20.initializeState(key, new byte[12], state, 0);
-				ChaCha20.chacha20Block(state, serializedKey);
+				ChaCha20.chacha20Block(state, MemorySegment.ofArray(serializedKey), 0);
 
 				var poly1305 = POLY1305_CONSTRUCTOR.invoke();
 				POLY1305_ENGINE_INIT.invoke(poly1305, (Key) new SecretKeySpec(serializedKey, 0, 32, "ChaCha20-Poly1305"), (AlgorithmParameterSpec) null);
@@ -200,10 +201,10 @@ public class Poly1305Test {
 		Poly1305.poly1305AeadEncrypt(aad.getBytes(StandardCharsets.UTF_8), key, nonce, ByteBuffer.wrap(plaintext.getBytes(StandardCharsets.UTF_8)), ByteBuffer.wrap(ciphertext), ByteBuffer.wrap(tag));
 
 		byte[] result = new byte[plaintext.getBytes(StandardCharsets.UTF_8).length];
-		Poly1305.poly1305AeadDecrypt(aad.getBytes(StandardCharsets.UTF_8), key, nonce, ByteBuffer.wrap(ciphertext), ByteBuffer.wrap(result), ByteBuffer.wrap(tag));
+		Poly1305.poly1305AeadDecrypt(aad.getBytes(StandardCharsets.UTF_8), key, nonce, MemorySegment.ofArray(ciphertext), MemorySegment.ofArray(result), MemorySegment.ofArray(tag));
 		assertArrayEquals(plaintext.getBytes(StandardCharsets.UTF_8), result);
 
 		tag[0] ^= 0x01;
-		assertThrows(AEADBadTagException.class, () -> Poly1305.poly1305AeadDecrypt(aad.getBytes(StandardCharsets.UTF_8), key, nonce, ByteBuffer.wrap(ciphertext), ByteBuffer.wrap(result), ByteBuffer.wrap(tag)));
+		assertThrows(AEADBadTagException.class, () -> Poly1305.poly1305AeadDecrypt(aad.getBytes(StandardCharsets.UTF_8), key, nonce, MemorySegment.ofArray(ciphertext), MemorySegment.ofArray(result), MemorySegment.ofArray(tag)));
 	}
 }

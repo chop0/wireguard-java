@@ -4,6 +4,7 @@ import ax.xz.wireguard.noise.crypto.Poly1305;
 
 import javax.crypto.*;
 import javax.crypto.spec.IvParameterSpec;
+import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.security.InvalidAlgorithmParameterException;
@@ -35,7 +36,7 @@ public final class SymmetricKeypair {
 		ByteBuffer.wrap(nonceBytes).order(ByteOrder.LITTLE_ENDIAN).position(4).putLong(nonce);
 
 		int srcLength = src.remaining();
-		Poly1305.poly1305AeadEncrypt(scratchBuffer, new byte[0], sendKey, nonceBytes, src, dst.slice(dst.position(), srcLength), dst.slice(dst.position() + srcLength, 16));
+		Poly1305.poly1305AeadEncrypt(MemorySegment.ofBuffer(scratchBuffer), new byte[0], sendKey, nonceBytes, MemorySegment.ofBuffer(src), MemorySegment.ofBuffer(dst.slice(dst.position(), srcLength)), MemorySegment.ofBuffer(dst.slice(dst.position() + srcLength, 16)));
 		dst.position(dst.position() + srcLength + 16);
 
 		return nonce;
@@ -44,7 +45,7 @@ public final class SymmetricKeypair {
 	public void decipher(ByteBuffer scratchBuffer, long counter, ByteBuffer src, ByteBuffer dst) throws BadPaddingException {
 		var nonceBytes = new byte[ChaChaPoly1305NonceSize];
 		ByteBuffer.wrap(nonceBytes).order(ByteOrder.LITTLE_ENDIAN).position(4).putLong(counter);
-		Poly1305.poly1305AeadDecrypt(scratchBuffer, new byte[0], receiveKey, nonceBytes, src.slice(src.position(), src.limit() - src.position() - 16), dst, src.slice(src.limit() - 16, 16));
+		Poly1305.poly1305AeadDecrypt(MemorySegment.ofBuffer(scratchBuffer), new byte[0], receiveKey, nonceBytes, MemorySegment.ofBuffer(src.slice(src.position(), src.limit() - src.position() - 16)), MemorySegment.ofBuffer(dst), MemorySegment.ofBuffer(src.slice(src.limit() - 16, 16)));
 		src.position(src.limit());
 		dst.position(dst.limit());
 	}

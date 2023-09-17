@@ -1,6 +1,18 @@
 package ax.xz.wireguard.noise.crypto;
 
-import java.nio.ByteBuffer;
+import jdk.incubator.vector.ByteVector;
+import jdk.incubator.vector.IntVector;
+import jdk.incubator.vector.VectorShuffle;
+import jdk.incubator.vector.VectorSpecies;
+
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+import java.nio.ByteOrder;
+
+import static java.lang.foreign.ValueLayout.JAVA_BYTE;
+import static java.lang.foreign.ValueLayout.JAVA_INT;
+import static jdk.incubator.vector.VectorOperators.ROL;
+import static jdk.incubator.vector.VectorOperators.XOR;
 
 public class ChaCha20 {
 	private static final int BLOCK_SIZE = 64;
@@ -38,74 +50,184 @@ public class ChaCha20 {
 			   ((b[offset + 3] & 0xFF) << 24);
 	}
 
+
+	static int rotateLeft(int N, int S) {
+		return ((N >>> (~S)) >>> 1) | (N << S);
+	}
+
 	// Method to perform the quarter round operation
 	static void quarterRound(int[] state, int a, int b, int c, int d) {
-		state[a] += state[b]; state[d] ^= state[a]; state[d] = Integer.rotateLeft(state[d], 16);
-		state[c] += state[d]; state[b] ^= state[c]; state[b] = Integer.rotateLeft(state[b], 12);
-		state[a] += state[b]; state[d] ^= state[a]; state[d] = Integer.rotateLeft(state[d], 8);
-		state[c] += state[d]; state[b] ^= state[c]; state[b] = Integer.rotateLeft(state[b], 7);
+		state[a] += state[b];
+		state[d] ^= state[a];
+		state[d] = rotateLeft(state[d], 16);
+		state[c] += state[d];
+		state[b] ^= state[c];
+		state[b] = rotateLeft(state[b], 12);
+		state[a] += state[b];
+		state[d] ^= state[a];
+		state[d] = rotateLeft(state[d], 8);
+		state[c] += state[d];
+		state[b] ^= state[c];
+		state[b] = rotateLeft(state[b], 7);
 	}
+
+	private static <T> VectorShuffle<T> rotateLanes(VectorSpecies<T> species, int amount) {
+		if (amount < 0)
+			amount += species.length();
+		return VectorShuffle.fromValues(species, (amount + 0) % species.length(), (amount + 1) % species.length(), (amount + 2) % species.length(), (amount + 3) % species.length());
+	}
+
+	private static final VectorShuffle<Integer> ROTATE_1 = rotateLanes(IntVector.SPECIES_128, 1);
+	private static final VectorShuffle<Integer> ROTATE_2 = rotateLanes(IntVector.SPECIES_128, 2);
+	private static final VectorShuffle<Integer> ROTATE_3 = rotateLanes(IntVector.SPECIES_128, 3);
+
 
 	// Method to perform the ChaCha20 block function
-	 static void chacha20Block(int[] state, byte[] output) {
-		int[] workingState = state.clone();
+	static void chacha20Block(int[] initialState, MemorySegment output, int counter) {
+		var a = IntVector.fromArray(IntVector.SPECIES_128, initialState, 0);
+		var b = IntVector.fromArray(IntVector.SPECIES_128, initialState, 4);
+		var c = IntVector.fromArray(IntVector.SPECIES_128, initialState, 8);
+		var d = IntVector.fromArray(IntVector.SPECIES_128, initialState, 12);
+
+		d = d.withLane(0, counter);
+
+		var aOrig = a;
+		var bOrig = b;
+		var cOrig = c;
+		var dOrig = d;
+
 		for (int i = 0; i < 10; i++) {
-			doubleRound(workingState);
+			a = a.add(b);
+			d = d.lanewise(XOR, a);
+			d = d.lanewise(ROL, 16);
+			c = c.add(d);
+			b = b.lanewise(XOR, c);
+			b = b.lanewise(ROL, 12);
+			a = a.add(b);
+			d = d.lanewise(XOR, a);
+			d = d.lanewise(ROL, 8);
+			c = c.add(d);
+			b = b.lanewise(XOR, c);
+			b = b.lanewise(ROL, 7);
+
+			a = a;
+			b = b.rearrange(ROTATE_1);
+			c = c.rearrange(ROTATE_2);
+			d = d.rearrange(ROTATE_3);
+
+			a = a.add(b);
+			d = d.lanewise(XOR, a);
+			d = d.lanewise(ROL, 16);
+			c = c.add(d);
+			b = b.lanewise(XOR, c);
+			b = b.lanewise(ROL, 12);
+			a = a.add(b);
+			d = d.lanewise(XOR, a);
+			d = d.lanewise(ROL, 8);
+			c = c.add(d);
+			b = b.lanewise(XOR, c);
+			b = b.lanewise(ROL, 7);
+
+			a = a;
+			b = b.rearrange(ROTATE_3);
+			c = c.rearrange(ROTATE_2);
+			d = d.rearrange(ROTATE_1);
 		}
 
-		// Adding the original input words to the output words
-		for (int i = 0; i < state.length; i++) {
-			state[i] += workingState[i];
-			output[i * 4] = (byte) state[i];
-			output[i * 4 + 1] = (byte) (state[i] >> 8);
-			output[i * 4 + 2] = (byte) (state[i] >> 16);
-			output[i * 4 + 3] = (byte) (state[i] >> 24);
-		}
+		a = a.add(aOrig);
+		b = b.add(bOrig);
+		c = c.add(cOrig);
+		d = d.add(dOrig);
+
+		a.intoMemorySegment(output, 0, ByteOrder.nativeOrder());
+		b.intoMemorySegment(output, 16, ByteOrder.nativeOrder());
+		c.intoMemorySegment(output, 32, ByteOrder.nativeOrder());
+		d.intoMemorySegment(output, 48, ByteOrder.nativeOrder());
 	}
 
-	static void doubleRound(int[] state) {
-		quarterRound(state, 0, 4, 8, 12);
-		quarterRound(state, 1, 5, 9, 13);
-		quarterRound(state, 2, 6, 10, 14);
-		quarterRound(state, 3, 7, 11, 15);
+	static void doubleRound(MemorySegment state) {
+		var a = IntVector.fromMemorySegment(IntVector.SPECIES_128, state, 0, ByteOrder.nativeOrder());
+		var b = IntVector.fromMemorySegment(IntVector.SPECIES_128, state, 16, ByteOrder.nativeOrder());
+		var c = IntVector.fromMemorySegment(IntVector.SPECIES_128, state, 32, ByteOrder.nativeOrder());
+		var d = IntVector.fromMemorySegment(IntVector.SPECIES_128, state, 48, ByteOrder.nativeOrder());
 
-		quarterRound(state, 0, 5, 10, 15);
-		quarterRound(state, 1, 6, 11, 12);
-		quarterRound(state, 2, 7, 8, 13);
-		quarterRound(state, 3, 4, 9, 14);
+		a = a.add(b);
+		d = d.lanewise(XOR, a);
+		d = d.lanewise(ROL, 16);
+		c = c.add(d);
+		b = b.lanewise(XOR, c);
+		b = b.lanewise(ROL, 12);
+		a = a.add(b);
+		d = d.lanewise(XOR, a);
+		d = d.lanewise(ROL, 8);
+		c = c.add(d);
+		b = b.lanewise(XOR, c);
+		b = b.lanewise(ROL, 7);
+
+		a = a;
+		b = b.rearrange(ROTATE_1);
+		c = c.rearrange(ROTATE_2);
+		d = d.rearrange(ROTATE_3);
+
+		a = a.add(b);
+		d = d.lanewise(XOR, a);
+		d = d.lanewise(ROL, 16);
+		c = c.add(d);
+		b = b.lanewise(XOR, c);
+		b = b.lanewise(ROL, 12);
+		a = a.add(b);
+		d = d.lanewise(XOR, a);
+		d = d.lanewise(ROL, 8);
+		c = c.add(d);
+		b = b.lanewise(XOR, c);
+		b = b.lanewise(ROL, 7);
+
+		a = a;
+		b = b.rearrange(ROTATE_3);
+		c = c.rearrange(ROTATE_2);
+		d = d.rearrange(ROTATE_1);
+
+		a.intoMemorySegment(state, 0, ByteOrder.nativeOrder());
+		b.intoMemorySegment(state, 16, ByteOrder.nativeOrder());
+		c.intoMemorySegment(state, 32, ByteOrder.nativeOrder());
+		d.intoMemorySegment(state, 48, ByteOrder.nativeOrder());
 	}
+
+	private static final ThreadLocal<MemorySegment> KEY_STREAM = ThreadLocal.withInitial(() -> Arena.ofConfined().allocate(BLOCK_SIZE));
+	private static final VectorSpecies<Byte> SPECIES = ByteVector.SPECIES_PREFERRED;
 
 	// Method to encrypt or decrypt data
-	 static void chacha20(byte[] key, byte[] nonce, ByteBuffer src, ByteBuffer dst, int counter) {
-		int inputLength = src.remaining();
+	static void chacha20(byte[] key, byte[] nonce, MemorySegment src, MemorySegment dst, int counter) {
 		int blockSize = BLOCK_SIZE;
-		byte[] keyStream = new byte[blockSize];
-		byte[] block = new byte[blockSize];
+		var keyStream = KEY_STREAM.get();
 
-		for (int j = 0; j <= inputLength / blockSize - 1; j++) {
-			int[] state = new int[16];
-			initializeState(key, nonce,  state,counter + j);
-			chacha20Block(state, keyStream);
+		int[] initialState = new int[16];
+		initializeState(key, nonce, initialState, 0);
 
-			src.get(block, 0, blockSize);
+		long inputRemaining = src.byteSize();
+		int streamPosition = 0;
 
-			for (int i = 0; i < blockSize; i++) {
-				dst.put((byte) (block[i] ^ keyStream[i]));
+		while (inputRemaining > 0) {
+			chacha20Block(initialState, keyStream, counter++);
+
+			int bytesToProcess = (int) Math.min(inputRemaining, blockSize);
+			int bytesToProcessVectorised = SPECIES.loopBound(bytesToProcess);
+
+			int i = 0;
+
+			for (; i < bytesToProcessVectorised; i += SPECIES.length()) {
+				var srcVector = ByteVector.fromMemorySegment(SPECIES, src, streamPosition + i, ByteOrder.nativeOrder());
+				var keyStreamVector = ByteVector.fromMemorySegment(SPECIES, keyStream, i, ByteOrder.nativeOrder());
+
+				var result = srcVector.lanewise(XOR, keyStreamVector);
+				result.intoMemorySegment(dst, streamPosition + i, ByteOrder.nativeOrder());
 			}
-		}
 
-		int remainingBytes = inputLength % blockSize;
-		if (remainingBytes != 0) {
-			int j = inputLength / blockSize;
-			int[] state = new int[16];
-			initializeState(key, nonce, state, counter + j);
-			chacha20Block(state, keyStream);
+			for (; i < bytesToProcess; i++)
+				dst.set(JAVA_BYTE, streamPosition + i, (byte) (src.get(JAVA_BYTE, streamPosition + i) ^ keyStream.get(JAVA_BYTE, i)));
 
-			src.get(block, 0, remainingBytes);
-
-			for (int i = 0; i < remainingBytes; i++) {
-				dst.put((byte) (block[i] ^ keyStream[i]));
-			}
+			inputRemaining -= bytesToProcess;
+			streamPosition += bytesToProcess;
 		}
 	}
 

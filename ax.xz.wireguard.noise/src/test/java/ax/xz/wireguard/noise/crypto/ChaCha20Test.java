@@ -5,6 +5,9 @@ import org.junit.jupiter.api.Test;
 import javax.crypto.*;
 import javax.crypto.spec.ChaCha20ParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.InvalidAlgorithmParameterException;
@@ -131,27 +134,43 @@ class ChaCha20Test {
 		int[] state = new int[16];
 		ChaCha20.initializeState(TEST_KEY, TEST_NONCE_0, state, 1);
 
+		var mem = Arena.ofAuto().allocate(64);
+		mem.copyFrom(MemorySegment.ofArray(state));
 		for (int i = 0; i < 10; i++) {
-			ChaCha20.doubleRound(state);
+			ChaCha20.doubleRound(mem);
 		}
+		MemorySegment.ofArray(state).copyFrom(mem);
 		assertArrayEquals(expectedInnerBlock, state);
 	}
 
 	@Test
 	void chacha20Block() {
-		int[] expectedOutput = {
-			0xe4e7f110, 0x15593bd1, 0x1fdd0f50, 0xc47120a3,
-			0xc7f4d1c7, 0x0368c033, 0x9aaa2204, 0x4e6cd4c3,
-			0x466482d2, 0x09aa9f07, 0x05d7c214, 0xa2028bd9,
-			0xd19c12b5, 0xb94e16de, 0xe883d0cb, 0x4e3c50a2
+		byte[] expectedOutputByte = {
+			(byte) 0x10, (byte) 0xf1, (byte) 0xe7, (byte) 0xe4, (byte) 0xd1, (byte) 0x3b, (byte) 0x59, (byte) 0x15, (byte) 0x50, (byte) 0x0f, (byte) 0xdd, (byte) 0x1f, (byte) 0xa3, (byte) 0x20, (byte) 0x71, (byte) 0xc4,
+			(byte) 0xc7, (byte) 0xd1, (byte) 0xf4, (byte) 0xc7, (byte) 0x33, (byte) 0xc0, (byte) 0x68, (byte) 0x03, (byte) 0x04, (byte) 0x22, (byte) 0xaa, (byte) 0x9a, (byte) 0xc3, (byte) 0xd4, (byte) 0x6c, (byte) 0x4e,
+			(byte) 0xd2, (byte) 0x82, (byte) 0x64, (byte) 0x46, (byte) 0x07, (byte) 0x9f, (byte) 0xaa, (byte) 0x09, (byte) 0x14, (byte) 0xc2, (byte) 0xd7, (byte) 0x05, (byte) 0xd9, (byte) 0x8b, (byte) 0x02, (byte) 0xa2,
+			(byte) 0xb5, (byte) 0x12, (byte) 0x9c, (byte) 0xd1, (byte) 0xde, (byte) 0x16, (byte) 0x4e, (byte) 0xb9, (byte) 0xcb, (byte) 0xd0, (byte) 0x83, (byte) 0xe8, (byte) 0xa2, (byte) 0x50, (byte) 0x3c, (byte) 0x4e
 		};
+		int[] expectedOutput = new int[16];
+		MemorySegment.ofArray(expectedOutput).copyFrom(MemorySegment.ofArray(expectedOutputByte));
 
 		int[] state = new int[16];
 		ChaCha20.initializeState(TEST_KEY, TEST_NONCE_0, state, 1);
 
-		byte[] output = new byte[64];
-		ChaCha20.chacha20Block(state, output);
-		assertArrayEquals(expectedOutput, state);
+		var output = Arena.global().allocate(64, 4);
+		ChaCha20.chacha20Block(state, output, 1);
+
+		assertArrayEquals(expectedOutput, output.toArray(ValueLayout.JAVA_INT));
+	}
+
+	private static void hexPrint(byte[] bytes) {
+		for (int i = 0; i < bytes.length; i++) {
+			System.out.printf("0x%02x, ", bytes[i]);
+			if (i % 16 == 15) {
+				System.out.println();
+			}
+		}
+		System.out.println();
 	}
 
 	@Test
@@ -170,43 +189,49 @@ class ChaCha20Test {
 		};
 
 		byte[] result = new byte[plaintext.length()];
-		ChaCha20.chacha20(TEST_KEY, TEST_NONCE_1, ByteBuffer.wrap(plaintext.getBytes(StandardCharsets.UTF_8)), ByteBuffer.wrap(result), 1);
+		ChaCha20.chacha20(TEST_KEY, TEST_NONCE_1, MemorySegment.ofArray(plaintext.getBytes(StandardCharsets.UTF_8)), MemorySegment.ofArray(result), 1);
 		assertArrayEquals(expectedCiphertext, result);
 	}
 
 	@Test
-	void benchmarkCipher() throws NoSuchAlgorithmException, ShortBufferException, InterruptedException, InvalidKeySpecException, NoSuchPaddingException, IllegalBlockSizeException, BadPaddingException, InvalidAlgorithmParameterException, InvalidKeyException {
-		var plaintext = "Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.";
+	void benchmarkCipher() throws NoSuchAlgorithmException, NoSuchPaddingException, IllegalBlockSizeException, BadPaddingException, InvalidAlgorithmParameterException, InvalidKeyException {
+		try (var arena = Arena.ofConfined()) {
+			var plaintext = "Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.";
 
-		var key = new byte[32];
-		ThreadLocalRandom.current().nextBytes(key);
+			var key = new byte[32];
+			ThreadLocalRandom.current().nextBytes(key);
 
-		var nonce = new byte[12];
-		var plaintextBytes = plaintext.getBytes(StandardCharsets.UTF_8);
-		byte[] ciphertext = new byte[plaintextBytes.length];
+			var nonce = new byte[12];
+			var plaintextBytes = plaintext.getBytes(StandardCharsets.UTF_8);
+			var plaintextMem = arena.allocate(plaintextBytes.length);
+			plaintextMem.copyFrom(MemorySegment.ofArray(plaintextBytes));
 
-		{
-			var start = Instant.now();
-			for (int i = 0; i < 1000000; i++) {
-				ChaCha20.chacha20(key, nonce, ByteBuffer.wrap(plaintextBytes), ByteBuffer.wrap(ciphertext), 0);
+			byte[] ciphertext = new byte[plaintextBytes.length];
+			var ciphertextMem = arena.allocate(ciphertext.length, 4);
+
+			{
+				var start = Instant.now();
+				for (int i = 0; i < 1000000; i++) {
+					ChaCha20.chacha20(key, nonce, plaintextMem, ciphertextMem, 0);
+				}
+				var end = Instant.now();
+
+				System.out.println("Time taken with ChaCha20.chacha20(): " + Duration.between(start, end).toMillis());
 			}
-			var end = Instant.now();
 
-			System.out.println("Time taken with ChaCha20.chacha20(): " + Duration.between(start, end).toMillis());
-		}
+			{
+				var sk = new SecretKeySpec(key, "ChaCha20-Poly1305");
 
-		{
-			var sk = new SecretKeySpec(key, "ChaCha20-Poly1305");
+				var start = Instant.now();
+				for (int i = 0; i < 1000000; i++) {
+					var cipher = Cipher.getInstance("ChaCha20");
+					cipher.init(Cipher.ENCRYPT_MODE, sk, new ChaCha20ParameterSpec(nonce, 0));
+					cipher.doFinal(plaintextBytes);
+				}
+				var end = Instant.now();
 
-			var start = Instant.now();
-			for (int i = 0; i < 1000000; i++) {
-				var cipher = Cipher.getInstance("ChaCha20");
-				cipher.init(Cipher.ENCRYPT_MODE, sk, new ChaCha20ParameterSpec(nonce, 0));
-				cipher.doFinal(plaintextBytes);
+				System.out.println("Time taken with cipher(): " + Duration.between(start, end).toMillis());
 			}
-			var end = Instant.now();
-
-			System.out.println("Time taken with cipher(): " + Duration.between(start, end).toMillis());
 		}
 	}
 
@@ -230,7 +255,7 @@ class ChaCha20Test {
 		}
 
 		byte[] ciphertextAndTag = new byte[plaintext.length()];
-		ChaCha20.chacha20(key, nonce, ByteBuffer.wrap(plaintext.getBytes(StandardCharsets.UTF_8)), ByteBuffer.wrap(ciphertextAndTag), 0);
+		ChaCha20.chacha20(key, nonce, MemorySegment.ofArray(plaintext.getBytes(StandardCharsets.UTF_8)), MemorySegment.ofArray(ciphertextAndTag), 0);
 
 		assertArrayEquals(ciphertextAndTag, ciphertextAndTagCipher.array());
 	}
