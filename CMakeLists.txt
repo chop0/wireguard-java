@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(posix_raw_project)
+project(posix_raw_project C ASM)
 
 set(CMAKE_C_STANDARD 99)
 
@@ -23,4 +23,15 @@ add_library(posix_raw SHARED ${SOURCE_FILES})
 
 set(SOURCE_FILES ax.xz.wireguard.noise/src/main/c/poly1305-donna.c)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Ofast -march=native")
+set(CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -Ofast")
 add_library(poly1305-donna SHARED ${SOURCE_FILES})
+
+set(SOURCE_FILES ax.xz.wireguard.noise/src/main/c/chacha.c ax.xz.wireguard.noise/src/main/c/chacha-generic.c)
+
+if(CMAKE_SYSTEM_PROCESSOR MATCHES arm64)
+  set(SOURCE_FILES ${SOURCE_FILES} ax.xz.wireguard.noise/src/main/c/arm64-chacha-neon.S)
+elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL x86_64 OR CMAKE_SYSTEM_PROCESSOR STREQUAL amd64)
+  set(SOURCE_FILES ${SOURCE_FILES} ax.xz.wireguard.noise/src/main/c/x86_64-chacha-avx2.S)
+endif()
+
+add_library(chacha SHARED ${SOURCE_FILES})

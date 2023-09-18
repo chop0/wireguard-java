@@ -19,6 +19,8 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.concurrent.ThreadLocalRandom;
 
+import static java.lang.foreign.ValueLayout.JAVA_BYTE;
+import static java.lang.foreign.ValueLayout.JAVA_INT;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 
 class ChaCha20Test {
@@ -116,32 +118,10 @@ class ChaCha20Test {
 				0x00000001, 0x09000000, 0x4a000000, 0x00000000
 			};
 
-			int[] state = new int[16];
+			var state = Arena.global().allocate(64, 4);
 			ChaCha20.initializeState(TEST_KEY, TEST_NONCE_0, state, 1);
-			assertArrayEquals(expectedOutput, state);
+			assertArrayEquals(expectedOutput, state.toArray(JAVA_INT));
 		}
-	}
-
-
-	@Test
-	void doubleRound() {
-		int[] expectedInnerBlock = {
-			0x837778ab, 0xe238d763, 0xa67ae21e, 0x5950bb2f,
-			0xc4f2d0c7, 0xfc62bb2f, 0x8fa018fc, 0x3f5ec7b7,
-			0x335271c2, 0xf29489f3, 0xeabda8fc, 0x82e46ebd,
-			0xd19c12b4, 0xb04e16de, 0x9e83d0cb, 0x4e3c50a2
-		};
-
-		int[] state = new int[16];
-		ChaCha20.initializeState(TEST_KEY, TEST_NONCE_0, state, 1);
-
-		var mem = Arena.ofAuto().allocate(64);
-		mem.copyFrom(MemorySegment.ofArray(state));
-		for (int i = 0; i < 10; i++) {
-			ChaCha20.doubleRound(mem);
-		}
-		MemorySegment.ofArray(state).copyFrom(mem);
-		assertArrayEquals(expectedInnerBlock, state);
 	}
 
 	@Test
@@ -155,13 +135,13 @@ class ChaCha20Test {
 		int[] expectedOutput = new int[16];
 		MemorySegment.ofArray(expectedOutput).copyFrom(MemorySegment.ofArray(expectedOutputByte));
 
-		int[] state = new int[16];
+		var state = Arena.global().allocate(16 * 4, 4);
 		ChaCha20.initializeState(TEST_KEY, TEST_NONCE_0, state, 1);
 
 		var output = Arena.global().allocate(64, 4);
 		ChaCha20.chacha20Block(state, output, 1);
 
-		assertArrayEquals(expectedOutput, output.toArray(ValueLayout.JAVA_INT));
+		assertArrayEquals(expectedOutput, output.toArray(JAVA_INT));
 	}
 
 	private static void hexPrint(byte[] bytes) {
@@ -189,9 +169,12 @@ class ChaCha20Test {
 			(byte) 0x87, (byte) 0x4d
 		};
 
-		byte[] result = new byte[plaintext.length()];
-		ChaCha20.chacha20(TEST_KEY, TEST_NONCE_1, MemorySegment.ofArray(plaintext.getBytes(StandardCharsets.UTF_8)), MemorySegment.ofArray(result), 1);
-		assertArrayEquals(expectedCiphertext, result);
+		var plaintextMem = Arena.global().allocate(plaintext.length());
+		plaintextMem.copyFrom(MemorySegment.ofArray(plaintext.getBytes(StandardCharsets.UTF_8)));
+
+		var result = Arena.global().allocate(plaintext.length());
+		ChaCha20.chacha20(TEST_KEY, TEST_NONCE_1, plaintextMem, result, 1);
+		assertArrayEquals(expectedCiphertext, result.toArray(JAVA_BYTE));
 	}
 
 	@Test
@@ -202,7 +185,7 @@ class ChaCha20Test {
 			ThreadLocalRandom.current().nextBytes(key);
 
 			var nonce = new byte[12];
-			var plaintextBytes = new byte[1024];
+			var plaintextBytes = new byte[4096];
 			ThreadLocalRandom.current().nextBytes(plaintextBytes);
 
 			var plaintextMem = arena.allocate(plaintextBytes.length);
@@ -221,7 +204,7 @@ class ChaCha20Test {
 				var start = Instant.now();
 				for (int i = 0; i < 100_000; i++) {
 					ChaCha20.chacha20(key, nonce, plaintextMem, ciphertextMem, 0);
-					hashcode ^= Arrays.hashCode(ciphertextMem.toArray(ValueLayout.JAVA_INT));
+					hashcode ^= Arrays.hashCode(ciphertextMem.toArray(JAVA_INT));
 				}
 				var end = Instant.now();
 
@@ -247,7 +230,7 @@ class ChaCha20Test {
 					var cipher = Cipher.getInstance("ChaCha20");
 					cipher.init(Cipher.ENCRYPT_MODE, sk, new ChaCha20ParameterSpec(nonce, 0));
 					cipher.doFinal(plaintextBytes);
-					hashcode ^= Arrays.hashCode(ciphertextMem.toArray(ValueLayout.JAVA_INT));
+					hashcode ^= Arrays.hashCode(ciphertextMem.toArray(JAVA_INT));
 				}
 				var end = Instant.now();
 
@@ -278,9 +261,12 @@ class ChaCha20Test {
 			cipher.doFinal(src, ciphertextAndTagCipher);
 		}
 
-		byte[] ciphertextAndTag = new byte[plaintext.length()];
-		ChaCha20.chacha20(key, nonce, MemorySegment.ofArray(plaintext.getBytes(StandardCharsets.UTF_8)), MemorySegment.ofArray(ciphertextAndTag), 0);
+		var plaintextMem = Arena.global().allocate(plaintext.length());
+		plaintextMem.copyFrom(MemorySegment.ofArray(plaintext.getBytes(StandardCharsets.UTF_8)));
 
-		assertArrayEquals(ciphertextAndTag, ciphertextAndTagCipher.array());
+		var ciphertextAndTag = Arena.global().allocate(plaintext.length());
+		ChaCha20.chacha20(key, nonce, plaintextMem, ciphertextAndTag, 0);
+
+		assertArrayEquals(ciphertextAndTag.toArray(JAVA_BYTE), ciphertextAndTagCipher.array());
 	}
 }

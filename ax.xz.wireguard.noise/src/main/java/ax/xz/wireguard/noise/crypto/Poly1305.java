@@ -88,8 +88,9 @@ public class Poly1305 {
 		return mac.toArray(JAVA_BYTE);
 	}
 
+	private static final ThreadLocal<MemorySegment> STATE = ThreadLocal.withInitial(() -> Arena.ofConfined().allocate(16 * 4, 16));
 	static void poly1305ChaChaKeyGen(byte[] key, byte[] nonce, ByteBuffer output) {
-		var state = new int[16];
+		var state = STATE.get();
 		ChaCha20.initializeState(key, nonce, state, 0);
 		var block = POLY1305_CHACHA_BLOCK.get();
 		ChaCha20.chacha20Block(state, block, 0);

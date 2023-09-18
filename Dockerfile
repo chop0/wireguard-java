@@ -20,7 +20,7 @@ WORKDIR /build
 
 COPY --from=openjdk:21-slim /usr/local/openjdk-21/include /usr/local/openjdk-21/include
 RUN JAVA_HOME=/usr/local/openjdk-21 cmake -DCMAKE_C_FLAGS="-nostdlib -l:libc.a" -GNinja .
-RUN ninja -j$(nproc) libpoly1305-donna.so libposix_raw.so
+RUN ninja -j$(nproc) libpoly1305-donna.so libposix_raw.so libchacha.so
 
 FROM openjdk:21-slim as profiler-build
 RUN apt update && apt install -y cmake make gcc g++ git
@@ -47,6 +47,7 @@ RUN echo "org.slf4j.jdk.platform.logging.SLF4JSystemLoggerFinder" > 'ax.xz.wireg
 COPY --from=build-java /build .
 COPY --from=build-native /build/libposix_raw.so .
 COPY --from=build-native /build/libpoly1305-donna.so .
+COPY --from=build-native /build/libchacha.so .
 COPY --from=profiler-build /out/libasyncProfiler.so /libasyncProfiler.so
 
 COPY ./run.sh /app/run.sh

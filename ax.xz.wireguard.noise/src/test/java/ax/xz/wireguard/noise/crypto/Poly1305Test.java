@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import javax.crypto.AEADBadTagException;
 import javax.crypto.spec.SecretKeySpec;
+import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -86,7 +87,7 @@ public class Poly1305Test {
 			var start = Instant.now();
 			for (int i = 0; i < 1000000; i++) {
 				byte[] serializedKey = new byte[1024];
-				int[] state = new int[16];
+				var state = Arena.ofAuto().allocate(16 * 4, 16);
 				ChaCha20.initializeState(key, new byte[12], state, 0);
 				ChaCha20.chacha20Block(state, MemorySegment.ofArray(serializedKey), 0);
 
