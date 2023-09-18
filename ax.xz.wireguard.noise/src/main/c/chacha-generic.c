@@ -1,4 +1,3 @@
-#include "chacha-generic.h"
 #include "chacha.h"
 
 #include <string.h>
@@ -79,7 +78,7 @@ void chacha_block_generic(uint32_t *state, uint8_t *stream, int nrounds)
 }
 
 
-void chacha_block_xor_generic(uint32_t *state, uint8_t *dst, const uint8_t *src, int nrounds,  unsigned int bytes)
+void chacha_cipher_generic(uint32_t *state, uint8_t *dst, const uint8_t *src, unsigned int bytes, int nrounds)
 {
 	/* aligned to potentially speed up crypto_xor() */
 	uint8_t stream[CHACHA_BLOCK_SIZE] __attribute__((aligned(sizeof(long))));
@@ -97,3 +96,13 @@ void chacha_block_xor_generic(uint32_t *state, uint8_t *dst, const uint8_t *src,
 	}
 }
 
+void chacha_block_keystream(uint32_t *state, uint8_t *dst, int nrounds)
+{
+	uint8_t empty[CHACHA_BLOCK_SIZE] = {0};
+	chacha_cipher(state, dst, empty, CHACHA_BLOCK_SIZE, nrounds);
+}
+void chacha_cipher(uint32_t *state, uint8_t *dst, const uint8_t *src,
+			  unsigned int bytes, int nrounds)
+{
+	chacha_cipher_generic(state, dst, src, bytes, nrounds);
+}
