@@ -137,7 +137,7 @@ public class Poly1305Test {
 	}
 
 	@Test
-	void poly1305AeadEncrypt() throws AEADBadTagException {
+	void poly1305AeadEncrypt() {
 		var plaintext = "Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.";
 
 		byte[] aad = {

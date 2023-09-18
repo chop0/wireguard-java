@@ -16,6 +16,7 @@ import java.security.NoSuchAlgorithmException;
 import java.security.spec.InvalidKeySpecException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.concurrent.ThreadLocalRandom;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -196,41 +197,64 @@ class ChaCha20Test {
 	@Test
 	void benchmarkCipher() throws NoSuchAlgorithmException, NoSuchPaddingException, IllegalBlockSizeException, BadPaddingException, InvalidAlgorithmParameterException, InvalidKeyException {
 		try (var arena = Arena.ofConfined()) {
-			var plaintext = "Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.";
 
 			var key = new byte[32];
 			ThreadLocalRandom.current().nextBytes(key);
 
 			var nonce = new byte[12];
-			var plaintextBytes = plaintext.getBytes(StandardCharsets.UTF_8);
+			var plaintextBytes = new byte[1024];
+			ThreadLocalRandom.current().nextBytes(plaintextBytes);
+
 			var plaintextMem = arena.allocate(plaintextBytes.length);
 			plaintextMem.copyFrom(MemorySegment.ofArray(plaintextBytes));
 
 			byte[] ciphertext = new byte[plaintextBytes.length];
-			var ciphertextMem = arena.allocate(ciphertext.length, 4);
+			var ciphertextMem = arena.allocate(ciphertext.length, 16);
 
 			{
-				var start = Instant.now();
-				for (int i = 0; i < 1000000; i++) {
+				// warm up
+				for (int i = 0; i < 100_000; i++) {
 					ChaCha20.chacha20(key, nonce, plaintextMem, ciphertextMem, 0);
+				}
+
+				int hashcode = 0;
+				var start = Instant.now();
+				for (int i = 0; i < 100_000; i++) {
+					ChaCha20.chacha20(key, nonce, plaintextMem, ciphertextMem, 0);
+					hashcode ^= Arrays.hashCode(ciphertextMem.toArray(ValueLayout.JAVA_INT));
 				}
 				var end = Instant.now();
 
-				System.out.println("Time taken with ChaCha20.chacha20(): " + Duration.between(start, end).toMillis());
+				System.out.println(hashcode); // stop jit from optimizing away the loop
+
+				double nanosPerByte = Duration.between(start, end).toNanos() / (plaintextBytes.length * 100_000D);
+				System.out.println(STR."Time taken with homemade chacha20: \{Duration.between(start, end).toMillis()} ms total, \{nanosPerByte} ns/byte");
 			}
 
 			{
 				var sk = new SecretKeySpec(key, "ChaCha20-Poly1305");
 
-				var start = Instant.now();
-				for (int i = 0; i < 1000000; i++) {
+				// warm up
+				for (int i = 0; i < 100_000; i++) {
 					var cipher = Cipher.getInstance("ChaCha20");
 					cipher.init(Cipher.ENCRYPT_MODE, sk, new ChaCha20ParameterSpec(nonce, 0));
 					cipher.doFinal(plaintextBytes);
 				}
+
+				int hashcode = 0;
+				var start = Instant.now();
+				for (int i = 0; i < 100_000; i++) {
+					var cipher = Cipher.getInstance("ChaCha20");
+					cipher.init(Cipher.ENCRYPT_MODE, sk, new ChaCha20ParameterSpec(nonce, 0));
+					cipher.doFinal(plaintextBytes);
+					hashcode ^= Arrays.hashCode(ciphertextMem.toArray(ValueLayout.JAVA_INT));
+				}
 				var end = Instant.now();
 
-				System.out.println("Time taken with cipher(): " + Duration.between(start, end).toMillis());
+				System.out.println(hashcode); // stop jit from optimizing away the loop
+
+				double nanosPerByte = Duration.between(start, end).toNanos() / (plaintextBytes.length * 100_000D);
+				System.out.println(STR."Time taken with java jce cipher: \{Duration.between(start, end).toMillis()} ms total, \{nanosPerByte} ns/byte");
 			}
 		}
 	}

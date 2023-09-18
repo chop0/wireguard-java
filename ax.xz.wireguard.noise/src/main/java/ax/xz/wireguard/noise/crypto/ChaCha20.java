@@ -10,7 +10,6 @@ import java.lang.foreign.MemorySegment;
 import java.nio.ByteOrder;
 
 import static java.lang.foreign.ValueLayout.JAVA_BYTE;
-import static java.lang.foreign.ValueLayout.JAVA_INT;
 import static jdk.incubator.vector.VectorOperators.ROL;
 import static jdk.incubator.vector.VectorOperators.XOR;
 
@@ -193,14 +192,8 @@ public class ChaCha20 {
 		d.intoMemorySegment(state, 48, ByteOrder.nativeOrder());
 	}
 
-	private static final ThreadLocal<MemorySegment> KEY_STREAM = ThreadLocal.withInitial(() -> Arena.ofConfined().allocate(BLOCK_SIZE));
-	private static final VectorSpecies<Byte> SPECIES = ByteVector.SPECIES_PREFERRED;
-
 	// Method to encrypt or decrypt data
 	static void chacha20(byte[] key, byte[] nonce, MemorySegment src, MemorySegment dst, int counter) {
-		int blockSize = BLOCK_SIZE;
-		var keyStream = KEY_STREAM.get();
-
 		int[] initialState = new int[16];
 		initializeState(key, nonce, initialState, 0);
 
@@ -208,26 +201,85 @@ public class ChaCha20 {
 		int streamPosition = 0;
 
 		while (inputRemaining > 0) {
-			chacha20Block(initialState, keyStream, counter++);
+			var a = IntVector.fromArray(IntVector.SPECIES_128, initialState, 0);
+			var b = IntVector.fromArray(IntVector.SPECIES_128, initialState, 4);
+			var c = IntVector.fromArray(IntVector.SPECIES_128, initialState, 8);
+			var d = IntVector.fromArray(IntVector.SPECIES_128, initialState, 12);
 
-			int bytesToProcess = (int) Math.min(inputRemaining, blockSize);
-			int bytesToProcessVectorised = SPECIES.loopBound(bytesToProcess);
+			d = d.withLane(0, counter++);
 
-			int i = 0;
+			var aOrig = a;
+			var bOrig = b;
+			var cOrig = c;
+			var dOrig = d;
 
-			for (; i < bytesToProcessVectorised; i += SPECIES.length()) {
-				var srcVector = ByteVector.fromMemorySegment(SPECIES, src, streamPosition + i, ByteOrder.nativeOrder());
-				var keyStreamVector = ByteVector.fromMemorySegment(SPECIES, keyStream, i, ByteOrder.nativeOrder());
+			for (int i1 = 0; i1 < 10; i1++) {
+				a = a.add(b);
+				d = d.lanewise(XOR, a);
+				d = d.lanewise(ROL, 16);
+				c = c.add(d);
+				b = b.lanewise(XOR, c);
+				b = b.lanewise(ROL, 12);
+				a = a.add(b);
+				d = d.lanewise(XOR, a);
+				d = d.lanewise(ROL, 8);
+				c = c.add(d);
+				b = b.lanewise(XOR, c);
+				b = b.lanewise(ROL, 7);
 
-				var result = srcVector.lanewise(XOR, keyStreamVector);
-				result.intoMemorySegment(dst, streamPosition + i, ByteOrder.nativeOrder());
+				a = a;
+				b = b.rearrange(ROTATE_1);
+				c = c.rearrange(ROTATE_2);
+				d = d.rearrange(ROTATE_3);
+
+				a = a.add(b);
+				d = d.lanewise(XOR, a);
+				d = d.lanewise(ROL, 16);
+				c = c.add(d);
+				b = b.lanewise(XOR, c);
+				b = b.lanewise(ROL, 12);
+				a = a.add(b);
+				d = d.lanewise(XOR, a);
+				d = d.lanewise(ROL, 8);
+				c = c.add(d);
+				b = b.lanewise(XOR, c);
+				b = b.lanewise(ROL, 7);
+
+				a = a;
+				b = b.rearrange(ROTATE_3);
+				c = c.rearrange(ROTATE_2);
+				d = d.rearrange(ROTATE_1);
 			}
 
-			for (; i < bytesToProcess; i++)
-				dst.set(JAVA_BYTE, streamPosition + i, (byte) (src.get(JAVA_BYTE, streamPosition + i) ^ keyStream.get(JAVA_BYTE, i)));
+			a = a.add(aOrig);
+			b = b.add(bOrig);
+			c = c.add(cOrig);
+			d = d.add(dOrig);
 
-			inputRemaining -= bytesToProcess;
-			streamPosition += bytesToProcess;
+			int toProcess = Math.min((int) inputRemaining, BLOCK_SIZE);
+			int inputRemainingThisBlock = toProcess;
+
+			int blockPosition = 0;
+
+			for (var keyStreamVector : new IntVector[]{a, b, c, d}) {
+				// if we have fewer than 16 bytes left, we need to process them individually and then break
+				if (inputRemainingThisBlock < 16) {
+					for (int i = 0; i < inputRemainingThisBlock; i++) {
+						dst.set(JAVA_BYTE, streamPosition + blockPosition + i, (byte) (keyStreamVector.reinterpretAsBytes().lane(i) ^ src.get(JAVA_BYTE, streamPosition + blockPosition + i)));
+					}
+
+					break;
+				}
+
+				var srcVector = IntVector.fromMemorySegment(IntVector.SPECIES_128, src, streamPosition + blockPosition, ByteOrder.nativeOrder());
+				srcVector.lanewise(XOR, keyStreamVector).intoMemorySegment(dst, streamPosition + blockPosition, ByteOrder.nativeOrder());
+
+				inputRemainingThisBlock -= 16;
+				blockPosition += 16;
+			}
+
+			inputRemaining -= toProcess;
+			streamPosition += toProcess;
 		}
 	}
 
