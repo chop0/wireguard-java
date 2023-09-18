@@ -76,7 +76,7 @@ public class BufferPool implements AutoCloseable {
 	private void release(ByteBuffer buffer) {
 		buffer.clear();
 		if (poolSize + 1 > maxPoolSize) {
-			logger.log(WARNING, "Buffer pool full, discarding buffer (allocated {0}, released {1})", numberAllocated, numberReleased);
+			logger.log(DEBUG, "Buffer pool full, discarding buffer (allocated {0}, released {1})", numberAllocated, numberReleased);
 			return;
 		}
 
