@@ -3,6 +3,7 @@ package ax.xz.wireguard.util;
 import static java.lang.System.Logger;
 import static java.lang.System.Logger.Level.*;
 
+import java.io.IOException;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.time.Duration;
@@ -63,6 +64,6 @@ public class PersistentTaskExecutor<E extends Throwable> extends ThreadPoolExecu
 	}
 
 	public interface InterruptibleRunnable {
-		void run() throws InterruptedException;
+		void run() throws InterruptedException, IOException;
 	}
 }

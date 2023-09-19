@@ -7,7 +7,6 @@ import ax.xz.wireguard.noise.keys.NoisePublicKey;
 
 import javax.annotation.Nullable;
 import javax.annotation.concurrent.GuardedBy;
-import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.time.Duration;
 import java.util.*;
@@ -64,20 +63,14 @@ class PeerList {
 	}
 
 	public void routeMessageInwards(InetSocketAddress origin, int originIndex, Message message) {
-		peerListLock.readLock().lock();
-
-		try {
-			var peer = innerList.get(originIndex);
-			if (peer == null) {
-				log.log(DEBUG, "Received message from unknown peer {0}", origin);
-				message.close();
-				return;
-			}
-
-			peer.receiveInboundMessage(origin, message);
-		} finally {
-			peerListLock.readLock().unlock();
+		var peer = innerList.get(originIndex);
+		if (peer == null) {
+			log.log(DEBUG, "Received message from unknown peer {0}", origin);
+			message.close();
+			return;
 		}
+
+		peer.receiveInboundMessage(origin, message);
 	}
 
 	public void broadcastMessageOutwards(BufferPool.BufferGuard data) {

@@ -5,6 +5,7 @@
 #include <jni.h>
 #include <net/if.h>
 #include <stdio.h>
+#include <sys/sysinfo.h>
 
 static jobject createFdObject(JNIEnv *env, int fd) {
     jclass sharedSecretsCls = FIND_CLASS(env, "jdk/internal/access/SharedSecrets");
@@ -27,18 +28,28 @@ static jobject createFdObject(JNIEnv *env, int fd) {
 JNIEXPORT jobject JNICALL Java_ax_xz_raw_posix_POSIXTunProvider_open(JNIEnv *env, jclass clazz) {
 	// open tun device
 	jclass posixTunCls = FIND_CLASS(env, "ax/xz/raw/posix/POSIXTun");
-    jmethodID posixTunConstructor = GET_METHOD_ID(env, posixTunCls, "<init>", "(Ljava/io/FileDescriptor;Ljava/lang/String;)V");
+    jmethodID posixTunConstructor = GET_METHOD_ID(env, posixTunCls, "<init>", "([Ljava/io/FileDescriptor;Ljava/lang/String;)V");
 
     char name[IFNAMSIZ];
-    int fd = IO_TRY(env, open_tun(name, sizeof(name)));
-    if (fd < 0) {
+    int queueCount = 0; // it's broken atm
+    int queues[queueCount + 1]; // +1 for primary fd
+
+    int primaryFd = IO_TRY(env, open_tun(name, sizeof(name), &queueCount, queues + 1));
+    if (primaryFd < 0) {
 		return NULL;
 	}
 
-    jobject fdObj = createFdObject(env, fd);
-    jstring nameObj = (*env)->NewStringUTF(env, name);
+	queues[0] = primaryFd;
+	queueCount++;
 
-    return (*env)->NewObject(env, posixTunCls, posixTunConstructor, fdObj, nameObj);
+    jobjectArray fds = (*env)->NewObjectArray(env, queueCount, FIND_CLASS(env, "java/io/FileDescriptor"), NULL);
+    for (int i = 0; i < queueCount; i++) {
+		jobject fdObj = createFdObject(env, queues[i]);
+		(*env)->SetObjectArrayElement(env, fds, i, fdObj);
+	}
+
+    jstring nameObj = (*env)->NewStringUTF(env, name);
+    return (*env)->NewObject(env, posixTunCls, posixTunConstructor, fds, nameObj);
 }
 
 static void getName(JNIEnv *env, jobject tunObj, char *name, int nameLength) {

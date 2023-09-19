@@ -2,6 +2,7 @@
 
 #include <sys/socket.h>
 #include <sys/ioctl.h>
+#include <sys/uio.h>
 
 #ifdef __APPLE__
 #include <sys/kern_control.h>
@@ -23,7 +24,43 @@
 #include "posix_raw.h"
 
 #ifdef __linux__
-int open_tun(char *name, int nameLength) {
+static int tun_alloc_mq(char *dev, int queues, int *fds)
+  {
+      struct ifreq ifr;
+      int fd, err, i;
+
+      if (!dev)
+          return -1;
+
+      memset(&ifr, 0, sizeof(ifr));
+      /* Flags: IFF_TUN   - TUN device (no Ethernet headers)
+       *        IFF_TAP   - TAP device
+       *
+       *        IFF_NO_PI - Do not provide packet information
+       *        IFF_MULTI_QUEUE - Create a queue of multiqueue device
+       */
+      ifr.ifr_flags = IFF_TUN | IFF_NO_PI | IFF_MULTI_QUEUE;
+      strcpy(ifr.ifr_name, dev);
+
+      for (i = 0; i < queues; i++) {
+          if ((fd = open("/dev/net/tun", O_RDWR)) < 0)
+             goto err;
+          err = ioctl(fd, TUNSETIFF, (void *)&ifr);
+          if (err) {
+             close(fd);
+             goto err;
+          }
+          fds[i] = fd;
+      }
+
+      return 0;
+  err:
+      for (--i; i >= 0; i--)
+          close(fds[i]);
+      return err;
+  }
+
+int open_tun(char *name, int nameLength, int *multiqueueCount, int *multiqueues) {
 	int fd = open("/dev/net/tun", O_RDWR);
 	if (fd < 0) {
 		return -1;
@@ -31,7 +68,7 @@ int open_tun(char *name, int nameLength) {
 
 	struct ifreq ifr;
 	memset(&ifr, 0, sizeof(ifr));
-	ifr.ifr_flags = IFF_TUN | IFF_NO_PI;
+	ifr.ifr_flags = IFF_TUN | IFF_NO_PI | IFF_MULTI_QUEUE;
 	int err = ioctl(fd, TUNSETIFF, &ifr);
 	if (err < 0) {
 		close(fd);
@@ -39,6 +76,11 @@ int open_tun(char *name, int nameLength) {
 	}
 
 	strncpy(name, ifr.ifr_name, nameLength);
+
+	if (tun_alloc_mq(ifr.ifr_name, *multiqueueCount, multiqueues) < 0) {
+		perror("tun_alloc_mq");
+		*multiqueueCount = 0;
+	}
 
 	return fd;
 }
@@ -79,7 +121,7 @@ static int get_utun_ctl_addr(struct sockaddr_ctl *addr) {
 	return 0;
 }
 
-int open_tun(char *name, int nameLength) {
+int open_tun(char *name, int nameLength, int *multiqueueCount, int *multiqueues) {
 	int fd = socket(PF_SYSTEM, SOCK_DGRAM, SYSPROTO_CONTROL);
 	if (fd < 0) {
 		return -1;
@@ -98,6 +140,7 @@ int open_tun(char *name, int nameLength) {
 		}
 
        	snprintf(name, nameLength, "utun%d", i);
+       	*multiqueueCount = 0;
        	return fd;
 	}
 
@@ -153,4 +196,16 @@ int set_mtu(char const* name, int nameLength, int mtu) {
 	close(sockfd);
 
 	return result;
+}
+
+int wg_readv(int fd, struct iovec *iov, int iovcnt) {
+	return readv(fd, iov, iovcnt);
+}
+
+int wg_writev(int fd, struct iovec *iov, int iovcnt) {
+	return writev(fd, iov, iovcnt);
+}
+
+int wg_close(int fd) {
+	return close(fd);
 }

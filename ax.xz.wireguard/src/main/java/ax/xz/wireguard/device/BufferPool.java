@@ -1,5 +1,6 @@
 package ax.xz.wireguard.device;
 
+import java.lang.foreign.MemorySegment;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.nio.ByteBuffer;
@@ -9,7 +10,10 @@ import static java.lang.System.Logger.Level.DEBUG;
 import static java.lang.System.Logger.Level.WARNING;
 
 public class BufferPool implements AutoCloseable {
+	private static final int TCACHE_SIZE = 7;
+
 	private static final VarHandle POOL_SIZE, NUM_ALLOCATED, NUM_RELEASED;
+
 	static {
 		try {
 			POOL_SIZE = MethodHandles.lookup().findVarHandle(BufferPool.class, "poolSize", int.class);
@@ -26,6 +30,7 @@ public class BufferPool implements AutoCloseable {
 	private final int maxPoolSize;
 
 	private final ConcurrentLinkedQueue<ByteBuffer> pool;
+	private final ThreadLocal<ByteBuffer[]> tcache = ThreadLocal.withInitial(() -> new ByteBuffer[TCACHE_SIZE]);
 
 	private volatile int poolSize = 0;
 	private volatile int numberAllocated = 0;
@@ -45,6 +50,31 @@ public class BufferPool implements AutoCloseable {
 		}
 	}
 
+	private ByteBuffer retrieveTcacheIfAvailable() {
+		var tcache = this.tcache.get();
+		for (int i = 0; i < TCACHE_SIZE; i++) {
+			var buffer = tcache[i];
+			if (buffer != null) {
+				tcache[i] = null;
+				return buffer;
+			}
+		}
+
+		return null;
+	}
+
+	private boolean storeTcacheIfAvailable(ByteBuffer buffer) {
+		var tcache = this.tcache.get();
+		for (int i = 0; i < TCACHE_SIZE; i++) {
+			if (tcache[i] == null) {
+				tcache[i] = buffer;
+				return true;
+			}
+		}
+
+		return false;
+	}
+
 	/**
 	 * Acquire a buffer from the pool. If the pool is empty, a new buffer is allocated.
 	 * If the needed size is larger than the pool's buffer size, a warning is logged and a new buffer is allocated.
@@ -53,28 +83,36 @@ public class BufferPool implements AutoCloseable {
 	 * @return A buffer of at least the requested size
 	 */
 	public BufferGuard acquire(int neededSize) {
-		ByteBuffer buffer;
+		return new BufferGuard(acquire0(neededSize).limit(neededSize), this);
+	}
 
+	private ByteBuffer acquire0(int neededSize) {
 		if (neededSize > bufferSize) {
 			logger.log(WARNING, "Requested buffer size %d is larger than pool size %d", neededSize, bufferSize);
-			buffer = ByteBuffer.allocateDirect(neededSize);
-		} else {
-			buffer = pool.poll();
-
-			if (buffer == null) {
-				buffer = ByteBuffer.allocateDirect(bufferSize);
-				NUM_ALLOCATED.getAndAdd(this, 1);
-				logger.log(DEBUG, "Buffer pool empty, allocating new buffer (allocated {0}, released {1})", numberAllocated, numberReleased);
-			} else {
-				POOL_SIZE.getAndAdd(this, -1);
-			}
+			return ByteBuffer.allocateDirect(neededSize);
 		}
 
-		return new BufferGuard(buffer.limit(neededSize), this);
+		var tcacheBuffer = retrieveTcacheIfAvailable();
+		if (tcacheBuffer != null)
+			return tcacheBuffer;
+
+		var pollBuffer = pool.poll();
+		if (pollBuffer != null) {
+			POOL_SIZE.getAndAdd(this, -1);
+			return pollBuffer;
+		}
+
+		NUM_ALLOCATED.getAndAdd(this, 1);
+		logger.log(DEBUG, "Buffer pool empty, allocating new buffer (allocated {0}, released {1})", numberAllocated, numberReleased);
+		return ByteBuffer.allocateDirect(bufferSize);
 	}
 
 	private void release(ByteBuffer buffer) {
 		buffer.clear();
+
+		if (storeTcacheIfAvailable(buffer))
+			return;
+
 		if (poolSize + 1 > maxPoolSize) {
 			logger.log(DEBUG, "Buffer pool full, discarding buffer (allocated {0}, released {1})", numberAllocated, numberReleased);
 			return;
@@ -100,6 +138,7 @@ public class BufferPool implements AutoCloseable {
 
 	public static final class BufferGuard implements AutoCloseable {
 		private static final VarHandle CLOSED;
+
 		static {
 			try {
 				CLOSED = MethodHandles.lookup().findVarHandle(BufferGuard.class, "closed", boolean.class);
@@ -144,6 +183,12 @@ public class BufferPool implements AutoCloseable {
 			if (closed)
 				throw new IllegalStateException("Buffer already closed");
 			return buffer;
+		}
+
+		public MemorySegment segment() {
+			if (closed)
+				throw new IllegalStateException("Buffer already closed");
+			return MemorySegment.ofBuffer(buffer);
 		}
 
 		public BufferPool pool() {

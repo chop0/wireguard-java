@@ -7,7 +7,8 @@ import java.io.IOException;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 
 import static java.lang.System.Logger;
-import static java.lang.System.Logger.Level.*;
+import static java.lang.System.Logger.Level.INFO;
+import static java.lang.System.Logger.Level.WARNING;
 
 public class TunnelDeviceBond {
 	private static final Logger logger = System.getLogger(TunnelDeviceBond.class.getName());
@@ -24,8 +25,10 @@ public class TunnelDeviceBond {
 		// platform threads for performance
 		try (var sts = new PersistentTaskExecutor<>(RuntimeException::new, logger, Thread.ofPlatform().factory())) {
 			sts.submit(device::run);
-			sts.submit(() -> {
+
+			sts.submit("Tunnel read worker", () -> {
 				int mtu = tunnel.mtu();
+
 				while (!Thread.interrupted()) {
 					var buffer = device.getBufferPool().acquire(mtu);
 
@@ -35,15 +38,11 @@ public class TunnelDeviceBond {
 						device.broadcastTransportOutwards(buffer);
 					} catch (IOException e) {
 						logger.log(WARNING, "Error reading from tunnel", e);
-						buffer.close();
-						break;
 					}
 				}
-
-				return null;
 			});
 
-			sts.submit(() -> {
+			sts.submit("Tunnel write worker", () -> {
 				while (!Thread.interrupted()) {
 					try (var transport = device.receiveIncomingTransport()) {
 						tunnel.write(transport.buffer());
@@ -51,8 +50,6 @@ public class TunnelDeviceBond {
 						logger.log(WARNING, "Error writing to tunnel", e);
 					}
 				}
-
-				return null;
 			});
 
 			try (var sch = new ScheduledThreadPoolExecutor(0, Thread.ofVirtual().factory())) {

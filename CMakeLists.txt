@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
 project(posix_raw_project C ASM)
 
-set(CMAKE_C_STANDARD 99)
+set(CMAKE_C_STANDARD 23)
 
 set(JAVA_AWT_LIBRARY NotNeeded)
 set(JAVA_JVM_LIBRARY NotNeeded)
