@@ -144,16 +144,6 @@ class ChaCha20Test {
 		assertArrayEquals(expectedOutput, output.toArray(JAVA_INT));
 	}
 
-	private static void hexPrint(byte[] bytes) {
-		for (int i = 0; i < bytes.length; i++) {
-			System.out.printf("0x%02x, ", bytes[i]);
-			if (i % 16 == 15) {
-				System.out.println();
-			}
-		}
-		System.out.println();
-	}
-
 	@Test
 	void chacha20() {
 		var plaintext = "Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.";
@@ -181,60 +171,59 @@ class ChaCha20Test {
 	void benchmarkCipher() throws NoSuchAlgorithmException, NoSuchPaddingException, IllegalBlockSizeException, BadPaddingException, InvalidAlgorithmParameterException, InvalidKeyException {
 		try (var arena = Arena.ofConfined()) {
 
-			var key = new byte[32];
-			ThreadLocalRandom.current().nextBytes(key);
+			var key = arena.allocate(32);
+			{
+				byte[] keyBytes = new byte[32];
+				ThreadLocalRandom.current().nextBytes(keyBytes);
+				key.copyFrom(MemorySegment.ofArray(keyBytes));
+			}
 
-			var nonce = new byte[12];
-			var plaintextBytes = new byte[4096];
-			ThreadLocalRandom.current().nextBytes(plaintextBytes);
+			var nonce = arena.allocate(12);
+			var plaintext = arena.allocate(4096);
+			{
+				byte[] plaintextBytes = new byte[4096];
+				ThreadLocalRandom.current().nextBytes(plaintextBytes);
+				plaintext.copyFrom(MemorySegment.ofArray(plaintextBytes));
+			}
 
-			var plaintextMem = arena.allocate(plaintextBytes.length);
-			plaintextMem.copyFrom(MemorySegment.ofArray(plaintextBytes));
-
-			byte[] ciphertext = new byte[plaintextBytes.length];
-			var ciphertextMem = arena.allocate(ciphertext.length, 16);
+			var ciphertext = arena.allocate(plaintext.byteSize());
 
 			{
 				// warm up
 				for (int i = 0; i < 100_000; i++) {
-					ChaCha20.chacha20(key, nonce, plaintextMem, ciphertextMem, 0);
+					ChaCha20.chacha20(key, nonce, plaintext, ciphertext, 0);
 				}
 
-				int hashcode = 0;
 				var start = Instant.now();
 				for (int i = 0; i < 100_000; i++) {
-					ChaCha20.chacha20(key, nonce, plaintextMem, ciphertextMem, 0);
-					hashcode ^= Arrays.hashCode(ciphertextMem.toArray(JAVA_INT));
+					ChaCha20.chacha20(key, nonce, plaintext, ciphertext, 0);
 				}
 				var end = Instant.now();
 
-				System.out.println(hashcode); // stop jit from optimizing away the loop
-
-				double nanosPerByte = Duration.between(start, end).toNanos() / (plaintextBytes.length * 100_000D);
+				double nanosPerByte = Duration.between(start, end).toNanos() / (plaintext.byteSize() * 100_000D);
 				System.out.println(STR."Time taken with homemade chacha20: \{Duration.between(start, end).toMillis()} ms total, \{nanosPerByte} ns/byte");
 			}
 
 			{
-				var sk = new SecretKeySpec(key, "ChaCha20-Poly1305");
+				var sk = new SecretKeySpec(key.toArray(JAVA_BYTE), "ChaCha20-Poly1305");
 
 				// warm up
+				var nonceBytes = nonce.toArray(JAVA_BYTE);
+				var plaintextBytes = plaintext.toArray(JAVA_BYTE);
+
 				for (int i = 0; i < 100_000; i++) {
 					var cipher = Cipher.getInstance("ChaCha20");
-					cipher.init(Cipher.ENCRYPT_MODE, sk, new ChaCha20ParameterSpec(nonce, 0));
+					cipher.init(Cipher.ENCRYPT_MODE, sk, new ChaCha20ParameterSpec(nonceBytes, 0));
 					cipher.doFinal(plaintextBytes);
 				}
 
-				int hashcode = 0;
 				var start = Instant.now();
 				for (int i = 0; i < 100_000; i++) {
 					var cipher = Cipher.getInstance("ChaCha20");
-					cipher.init(Cipher.ENCRYPT_MODE, sk, new ChaCha20ParameterSpec(nonce, 0));
+					cipher.init(Cipher.ENCRYPT_MODE, sk, new ChaCha20ParameterSpec(nonceBytes, 0));
 					cipher.doFinal(plaintextBytes);
-					hashcode ^= Arrays.hashCode(ciphertextMem.toArray(JAVA_INT));
 				}
 				var end = Instant.now();
-
-				System.out.println(hashcode); // stop jit from optimizing away the loop
 
 				double nanosPerByte = Duration.between(start, end).toNanos() / (plaintextBytes.length * 100_000D);
 				System.out.println(STR."Time taken with java jce cipher: \{Duration.between(start, end).toMillis()} ms total, \{nanosPerByte} ns/byte");

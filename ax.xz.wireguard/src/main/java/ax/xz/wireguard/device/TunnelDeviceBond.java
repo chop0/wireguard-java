@@ -1,6 +1,7 @@
 package ax.xz.wireguard.device;
 
 import ax.xz.raw.spi.Tun;
+import ax.xz.wireguard.device.message.PacketElement;
 import ax.xz.wireguard.util.PersistentTaskExecutor;
 
 import java.io.IOException;
@@ -27,15 +28,12 @@ public class TunnelDeviceBond {
 			sts.submit(device::run);
 
 			sts.submit("Tunnel read worker", () -> {
-				int mtu = tunnel.mtu();
-
 				while (!Thread.interrupted()) {
-					var buffer = device.getBufferPool().acquire(mtu);
+					var buffer = new PacketElement.UninitialisedIncomingTunnelPacket(device.getBufferPool().acquire());
 
 					try {
-						tunnel.read(buffer.buffer());
-						buffer.buffer().flip();
-						device.broadcastTransportOutwards(buffer);
+						var packet = buffer.initialise(tunnel::read);
+						device.broadcastPacketToPeers(packet);
 					} catch (IOException e) {
 						logger.log(WARNING, "Error reading from tunnel", e);
 					}
@@ -45,7 +43,7 @@ public class TunnelDeviceBond {
 			sts.submit("Tunnel write worker", () -> {
 				while (!Thread.interrupted()) {
 					try (var transport = device.receiveIncomingTransport()) {
-						tunnel.write(transport.buffer());
+						tunnel.write(transport.plaintextBuffer().asByteBuffer());
 					} catch (IOException e) {
 						logger.log(WARNING, "Error writing to tunnel", e);
 					}

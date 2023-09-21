@@ -1,6 +1,6 @@
 package ax.xz.wireguard.noise.handshake;
 
-import ax.xz.wireguard.noise.crypto.internal.Blake2s;
+import ax.xz.wireguard.noise.crypto.Blake2s;
 import ax.xz.wireguard.noise.keys.NoisePresharedKey;
 import ax.xz.wireguard.noise.keys.NoisePrivateKey;
 import ax.xz.wireguard.noise.keys.NoisePublicKey;

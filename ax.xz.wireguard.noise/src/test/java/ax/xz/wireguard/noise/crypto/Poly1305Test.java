@@ -51,7 +51,12 @@ public class Poly1305Test {
 		var text = "Cryptographic Forum Research Group";
 		byte[] expectedTag = {(byte) 0xa8, (byte) 0x06, (byte) 0x1d, (byte) 0xc1, (byte) 0x30, (byte) 0x51, (byte) 0x36, (byte) 0xc6, (byte) 0xc2, (byte) 0x2b, (byte) 0x8b, (byte) 0xaf, (byte) 0x0c, (byte) 0x01, (byte) 0x27, (byte) 0xa9};
 
-		var tag = Poly1305.poly1305(ByteBuffer.wrap(text.getBytes()), ByteBuffer.wrap(TEST_KEY));
+		var poly1305 = new Poly1305();
+
+		poly1305.init(MemorySegment.ofArray(TEST_KEY));
+		poly1305.update(MemorySegment.ofArray(text.getBytes()));
+
+		var tag = poly1305.finish();
 		assertArrayEquals(expectedTag, tag);
 	}
 
@@ -71,12 +76,18 @@ public class Poly1305Test {
 		plaintextbb.put(plaintextBytes);
 		plaintextbb.flip();
 
-		{
+		var outbb = ByteBuffer.allocateDirect( 16);
+
+		try (var arena = Arena.ofConfined()) {
+			var context = arena.allocate(Poly1305.POLY1305_CONTEXT);
 			var start = Instant.now();
-			for (int i = 0; i < 1000000; i++) {
+			for (int i = 0; i < 1_000_000; i++) {
 				plaintextbb.position(0);
 				keybb.position(0);
-				Poly1305.poly1305(plaintextbb, keybb);
+				var poly1305 = new Poly1305(context);
+				poly1305.init(MemorySegment.ofBuffer(keybb));
+				poly1305.update(MemorySegment.ofBuffer(plaintextbb));
+				poly1305.finish(MemorySegment.ofBuffer(outbb));
 			}
 			var end = Instant.now();
 
@@ -85,10 +96,11 @@ public class Poly1305Test {
 
 		{
 			var start = Instant.now();
-			for (int i = 0; i < 1000000; i++) {
-				byte[] serializedKey = new byte[1024];
-				var state = Arena.ofAuto().allocate(16 * 4, 16);
-				ChaCha20.initializeState(key, new byte[12], state, 0);
+			byte[] serializedKey = new byte[1024];
+			var state = Arena.ofAuto().allocate(16 * 4, 16);
+			var nonce = Arena.ofAuto().allocate(12);
+			for (int i = 0; i < 1_000_000; i++) {
+				ChaCha20.initializeState(MemorySegment.ofBuffer(keybb), nonce, state, 0);
 				ChaCha20.chacha20Block(state, MemorySegment.ofArray(serializedKey), 0);
 
 				var poly1305 = POLY1305_CONSTRUCTOR.invoke();
@@ -132,8 +144,7 @@ public class Poly1305Test {
 			(byte) 0xfd, (byte) 0xd1, (byte) 0xa6, (byte) 0x46
 		};
 
-		byte[] output = new byte[32];
-		Poly1305.poly1305ChaChaKeyGen(key, nonce, ByteBuffer.wrap(output));
+		byte[] output = ChaCha20Poly1305.poly1305ChaChaKeyGen(key, nonce);
 		assertArrayEquals(expectedOutput, output);
 	}
 
@@ -181,7 +192,7 @@ public class Poly1305Test {
 
 		byte[] tag = new byte[16];
 		byte[] ciphertext = new byte[plaintext.getBytes(StandardCharsets.UTF_8).length];
-		Poly1305.poly1305AeadEncrypt(aad, key, nonce, ByteBuffer.wrap(plaintext.getBytes(StandardCharsets.UTF_8)), ByteBuffer.wrap(ciphertext), ByteBuffer.wrap(tag));
+		ChaCha20Poly1305.poly1305AeadEncrypt(MemorySegment.ofArray(aad), MemorySegment.ofArray(key), MemorySegment.ofArray(nonce), MemorySegment.ofArray(plaintext.getBytes(StandardCharsets.UTF_8)), MemorySegment.ofArray(ciphertext), MemorySegment.ofArray(tag));
 
 		assertArrayEquals(expectedCiphertext, ciphertext);
 		assertArrayEquals(expectedTag, tag);
@@ -199,13 +210,13 @@ public class Poly1305Test {
 
 		byte[] tag = new byte[16];
 		byte[] ciphertext = new byte[plaintext.getBytes(StandardCharsets.UTF_8).length];
-		Poly1305.poly1305AeadEncrypt(aad.getBytes(StandardCharsets.UTF_8), key, nonce, ByteBuffer.wrap(plaintext.getBytes(StandardCharsets.UTF_8)), ByteBuffer.wrap(ciphertext), ByteBuffer.wrap(tag));
+		ChaCha20Poly1305.poly1305AeadEncrypt(MemorySegment.ofArray(aad.getBytes(StandardCharsets.UTF_8)), MemorySegment.ofArray(key), MemorySegment.ofArray(nonce), MemorySegment.ofArray(plaintext.getBytes(StandardCharsets.UTF_8)), MemorySegment.ofArray(ciphertext), MemorySegment.ofArray(tag));
 
 		byte[] result = new byte[plaintext.getBytes(StandardCharsets.UTF_8).length];
-		Poly1305.poly1305AeadDecrypt(aad.getBytes(StandardCharsets.UTF_8), key, nonce, MemorySegment.ofArray(ciphertext), MemorySegment.ofArray(result), MemorySegment.ofArray(tag));
+		ChaCha20Poly1305.poly1305AeadDecrypt(MemorySegment.ofArray(aad.getBytes(StandardCharsets.UTF_8)), MemorySegment.ofArray(key), MemorySegment.ofArray(nonce), MemorySegment.ofArray(ciphertext), MemorySegment.ofArray(result), MemorySegment.ofArray(tag));
 		assertArrayEquals(plaintext.getBytes(StandardCharsets.UTF_8), result);
 
 		tag[0] ^= 0x01;
-		assertThrows(AEADBadTagException.class, () -> Poly1305.poly1305AeadDecrypt(aad.getBytes(StandardCharsets.UTF_8), key, nonce, MemorySegment.ofArray(ciphertext), MemorySegment.ofArray(result), MemorySegment.ofArray(tag)));
+		assertThrows(AEADBadTagException.class, () -> ChaCha20Poly1305.poly1305AeadDecrypt(MemorySegment.ofArray(aad.getBytes(StandardCharsets.UTF_8)), MemorySegment.ofArray(key), MemorySegment.ofArray(nonce), MemorySegment.ofArray(ciphertext), MemorySegment.ofArray(result), MemorySegment.ofArray(tag)));
 	}
 }

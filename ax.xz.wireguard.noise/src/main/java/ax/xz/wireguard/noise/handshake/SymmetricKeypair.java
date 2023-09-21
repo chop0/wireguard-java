@@ -1,56 +1,94 @@
 package ax.xz.wireguard.noise.handshake;
 
+import ax.xz.wireguard.noise.crypto.ChaCha20Poly1305;
 import ax.xz.wireguard.noise.crypto.Poly1305;
 
 import javax.crypto.*;
-import javax.crypto.spec.IvParameterSpec;
+import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
+import java.lang.ref.Cleaner;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.security.InvalidAlgorithmParameterException;
-import java.security.InvalidKeyException;
-import java.security.NoSuchAlgorithmException;
-import java.util.Arrays;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static ax.xz.wireguard.noise.crypto.Crypto.ChaChaPoly1305NonceSize;
-import static java.lang.System.Logger.Level.INFO;
+import static java.lang.foreign.ValueLayout.JAVA_LONG;
 
 public final class SymmetricKeypair {
-	private static final System.Logger log = System.getLogger(SymmetricKeypair.class.getName());
+	private static final VarHandle SEND_COUNTER;
 
-	private final byte[] sendKey;
-	private final byte[] receiveKey;
+	static {
+		try {
+			SEND_COUNTER = MethodHandles.lookup().findVarHandle(SymmetricKeypair.class, "sendCounter", long.class);
+		} catch (NoSuchFieldException | IllegalAccessException e) {
+			throw new AssertionError(e);
+		}
+	}
 
-	private final AtomicLong sendCounter = new AtomicLong(0);
+	private static final Cleaner cleaner = Cleaner.create();
 
-	SymmetricKeypair(byte[] sendKey, byte[] receiveKey) {
+	private final Arena keyArena;
+	private final MemorySegment sendKey;
+	private final MemorySegment receiveKey;
+
+	private volatile long sendCounter = 0;
+
+	SymmetricKeypair(byte[] sendKeyBytes, byte[] receiveKeyBytes) {
+		var keyArena = Arena.ofShared();
+
+		var sendKey = keyArena.allocate(sendKeyBytes.length, 16).copyFrom(MemorySegment.ofArray(sendKeyBytes));
+		var receiveKey = keyArena.allocate(receiveKeyBytes.length, 16).copyFrom(MemorySegment.ofArray(receiveKeyBytes));
+
+		cleaner.register(this, () -> clean(sendKey, receiveKey, keyArena));
+
+		this.keyArena = keyArena;
 		this.sendKey = sendKey;
 		this.receiveKey = receiveKey;
 	}
 
-	public long cipher(ByteBuffer scratchBuffer, ByteBuffer src, ByteBuffer dst) {
-		var nonce = sendCounter.getAndIncrement();
-		var nonceBytes = new byte[ChaChaPoly1305NonceSize];
-		ByteBuffer.wrap(nonceBytes).order(ByteOrder.LITTLE_ENDIAN).position(4).putLong(nonce);
+	private static MemorySegment getNonceBytes(long nonce) {
+		interface Holder {
+			ThreadLocal<MemorySegment> NONCE = ThreadLocal.withInitial(() -> Arena.global().allocate(ChaChaPoly1305NonceSize, 4));
+		}
 
-		int srcLength = src.remaining();
-		Poly1305.poly1305AeadEncrypt(MemorySegment.ofBuffer(scratchBuffer), new byte[0], sendKey, nonceBytes, MemorySegment.ofBuffer(src), MemorySegment.ofBuffer(dst.slice(dst.position(), srcLength)), MemorySegment.ofBuffer(dst.slice(dst.position() + srcLength, 16)));
-		dst.position(dst.position() + srcLength + 16);
+		var nonceBytes = Holder.NONCE.get();
+		nonceBytes.set(JAVA_LONG, 0, nonce);
 
-		return nonce;
+		return nonceBytes;
 	}
 
-	public void decipher(ByteBuffer scratchBuffer, long counter, ByteBuffer src, ByteBuffer dst) throws BadPaddingException {
-		var nonceBytes = new byte[ChaChaPoly1305NonceSize];
-		ByteBuffer.wrap(nonceBytes).order(ByteOrder.LITTLE_ENDIAN).position(4).putLong(counter);
-		Poly1305.poly1305AeadDecrypt(MemorySegment.ofBuffer(scratchBuffer), new byte[0], receiveKey, nonceBytes, MemorySegment.ofBuffer(src.slice(src.position(), src.limit() - src.position() - 16)), MemorySegment.ofBuffer(dst), MemorySegment.ofBuffer(src.slice(src.limit() - 16, 16)));
-		src.position(src.limit());
-		dst.position(dst.limit());
+	public long cipher(MemorySegment src, MemorySegment dst) {
+		var counter = (long)SEND_COUNTER.getAndAdd(this, 1);
+
+		long textLength = src.byteSize();
+
+		var ciphertext = dst.asSlice(0, textLength);
+		var tag = dst.asSlice(textLength, 16);
+
+		ChaCha20Poly1305.poly1305AeadEncrypt(sendKey, getNonceBytes(counter), src, ciphertext, tag);
+
+		return counter;
 	}
 
-	public int scratchBufferSize(ByteBuffer src, ByteBuffer dst) {
-		return Poly1305.poly1305AeadBufferSize(src.remaining(), dst.remaining());
+	public void decipher(long counter, MemorySegment src, MemorySegment dst) throws BadPaddingException {
+		long textLength = src.byteSize() - 16;
+
+		var ciphertext = src.asSlice(0, textLength);
+		var tag = src.asSlice(textLength, 16);
+
+		ChaCha20Poly1305.poly1305AeadDecrypt(receiveKey, getNonceBytes(counter), ciphertext, dst, tag);
+	}
+
+	private static void clean(MemorySegment sendKey, MemorySegment receiveKey, Arena arena) {
+		sendKey.fill((byte)0);
+		receiveKey.fill((byte)0);
+		arena.close();
+	}
+
+	public void clean() {
+		clean(sendKey, receiveKey, keyArena);
 	}
 }

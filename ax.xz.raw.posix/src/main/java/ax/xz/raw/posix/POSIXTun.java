@@ -13,25 +13,30 @@ import java.nio.channels.FileChannel;
 import java.util.Arrays;
 import java.util.Set;
 
+import static ax.xz.raw.posix.POSIXTunUtils.getPacketFamily;
 import static java.lang.System.Logger.Level.INFO;
 import static java.util.Objects.requireNonNull;
 
 public class POSIXTun implements Tun {
-	private static final VarHandle FILE_DESCRIPTOR_READ_INDEX, FILE_DESCRIPTOR_WRITE_INDEX;
+	private static final boolean needsAfTypePrefix = System.getProperty("os.name").toLowerCase().contains("bsd") || System.getProperty("os.name").toLowerCase().contains("os x");
+
+	private static final VarHandle FILE_DESCRIPTOR_READ_INDEX;
+	private static final VarHandle FILE_DESCRIPTOR_WRITE_INDEX;
+
+	private static final VarHandle STATE;
 
 	static {
 		try {
 			FILE_DESCRIPTOR_READ_INDEX = MethodHandles.lookup().findVarHandle(POSIXTun.class, "readFdIndex", int.class);
 			FILE_DESCRIPTOR_WRITE_INDEX = MethodHandles.lookup().findVarHandle(POSIXTun.class, "writeFdIndex", int.class);
+
+			STATE = MethodHandles.lookup().findVarHandle(POSIXTun.class, "state", State.class);
 		} catch (ReflectiveOperationException e) {
 			throw new ExceptionInInitializerError(e);
 		}
 	}
 
 	private static final System.Logger logger = System.getLogger(POSIXTun.class.getSimpleName());
-
-	private static final int AF_INET = AFINET();
-	private static final int AF_INET6 = AFINET6();
 
 	private final String name;
 
@@ -42,12 +47,7 @@ public class POSIXTun implements Tun {
 	private volatile int readFdIndex = 0;
 	private volatile int writeFdIndex = 0;
 
-	private boolean up = false;
-
-	private void requireOpen(FileDescriptor fd) {
-		if (!fd.valid())
-			throw new IllegalStateException("Tun is closed");
-	}
+	private volatile State state = State.DOWN;
 
 	private POSIXTun(FileDescriptor[] fds, String name) {
 		for (var fd : fds)
@@ -70,56 +70,44 @@ public class POSIXTun implements Tun {
 	}
 
 	@Override
-	public void write(ByteBuffer buffer) throws IOException {
-		int fdIndex = (int)(Integer.toUnsignedLong((int) FILE_DESCRIPTOR_WRITE_INDEX.getAndAdd(this, 1)) % fileDescriptors.length);
-		requireOpen(fileDescriptors[fdIndex]);
+	public int write(ByteBuffer buffer) throws IOException {
+		requireOpen();
 
-		if (needsAfTypePrefix())
-			outputChannels[fdIndex].write(new ByteBuffer[]{getPacketFamily(buffer), buffer});
+		int fdIndex = rotateFdIndex(FILE_DESCRIPTOR_WRITE_INDEX);
+		var outputChannel = outputChannels[fdIndex];
+
+		if (needsAfTypePrefix)
+			return (int) (outputChannel.write(new ByteBuffer[]{getPacketFamily(buffer), buffer}) - 4);
 		else
-			outputChannels[fdIndex].write(buffer);
+			return outputChannel.write(buffer);
 	}
 
 	@Override
-	public void read(ByteBuffer buffer) throws IOException {
-		int fdIndex = (int)(Integer.toUnsignedLong((int) FILE_DESCRIPTOR_READ_INDEX.getAndAdd(this, 1)) % fileDescriptors.length);
-		requireOpen(fileDescriptors[fdIndex]);
-
+	public int read(ByteBuffer buffer) throws IOException {
 		interface TempHolder {
 			ThreadLocal<ByteBuffer> PACKET_FAMILY = ThreadLocal.withInitial(() -> ByteBuffer.allocateDirect(4));
 		}
 
-		if (needsAfTypePrefix())
-			inputChannels[fdIndex].read(new ByteBuffer[]{TempHolder.PACKET_FAMILY.get().clear(), buffer});
+		requireOpen();
+
+		int fdIndex = rotateFdIndex(FILE_DESCRIPTOR_READ_INDEX);
+		var inputChannel = inputChannels[fdIndex];
+
+		if (needsAfTypePrefix)
+			return (int) (inputChannel.read(new ByteBuffer[]{TempHolder.PACKET_FAMILY.get().clear(), buffer}) - 4);
 		else
-			inputChannels[fdIndex].read(buffer);
+			return inputChannel.read(buffer);
 	}
 
-	private static ByteBuffer getPacketFamily(ByteBuffer packet) throws IOException {
-		interface Holder {
-			ByteBuffer IPV4 = ByteBuffer.allocateDirect(4).putInt(AF_INET).flip();
-			ByteBuffer IPV6 = ByteBuffer.allocateDirect(4).putInt(AF_INET6).flip();
-		}
-
-		return switch (packet.get(packet.position()) >> 4) {
-			case 4 -> Holder.IPV4.duplicate();
-			case 6 -> Holder.IPV6.duplicate();
-			default -> throw new IOException("Unknown IP version");
-		};
-	}
-
-	@Override
-	public native void setMTU(int mtu) throws IOException;
-
-	@Override
-	public native int mtu() throws IOException;
-
-	public String name() {
-		return name;
+	private int rotateFdIndex(VarHandle vh) {
+		return (int) (Integer.toUnsignedLong((int) vh.getAndAdd(this, 1)) % fileDescriptors.length);
 	}
 
 	@Override
 	public void close() throws IOException {
+		if (!(STATE.compareAndSet(this, State.UP, State.CLOSED) || STATE.compareAndSet(this, State.DOWN, State.CLOSED)))
+			return;
+
 		for (int i = 0; i < fileDescriptors.length; i++) {
 			inputChannels[i].close();
 			outputChannels[i].close();
@@ -129,9 +117,8 @@ public class POSIXTun implements Tun {
 	@Override
 	public void addSubnet(Subnet subnet) throws IOException {
 		TunInterfaceConfigurer.get().addSubnet(name(), subnet);
-		if (!up) {
+		if (STATE.compareAndSet(this, State.DOWN, State.UP)) {
 			TunInterfaceConfigurer.get().up(name());
-			up = true;
 		}
 	}
 
@@ -145,18 +132,32 @@ public class POSIXTun implements Tun {
 		return TunInterfaceConfigurer.get().subnets(name());
 	}
 
-	private static final boolean needsAfTypePrefix = System.getProperty("os.name").toLowerCase().contains("bsd") || System.getProperty("os.name").toLowerCase().contains("os x");
+	@Override
+	public native void setMTU(int mtu) throws IOException;
 
-	private boolean needsAfTypePrefix() {
-		return needsAfTypePrefix;
+	@Override
+	public native int mtu() throws IOException;
+
+	private void requireOpen() {
+		if (!isOpen())
+			throw new IllegalStateException("Tun is not up");
 	}
 
-	private static native int AFINET();
+	@Override
+	public boolean isOpen() {
+		return state == State.UP;
+	}
 
-	private static native int AFINET6();
+	public String name() {
+		return name;
+	}
 
 	@Override
 	public String toString() {
-		return name;
+		return name();
+	}
+
+	enum State {
+		DOWN, UP, CLOSED
 	}
 }

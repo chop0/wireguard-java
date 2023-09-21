@@ -1,139 +1,80 @@
 package ax.xz.wireguard.device.peer;
 
-import ax.xz.wireguard.device.BufferPool;
+import ax.xz.wireguard.device.Pool;
 import ax.xz.wireguard.device.WireguardDevice;
-import ax.xz.wireguard.device.message.Message;
-import ax.xz.wireguard.device.message.MessageInitiation;
-import ax.xz.wireguard.device.message.MessageResponse;
-import ax.xz.wireguard.device.message.MessageTransport;
+import ax.xz.wireguard.device.message.IncomingPeerPacket;
+import ax.xz.wireguard.device.message.PacketElement;
+import ax.xz.wireguard.device.message.initiation.IncomingInitiation;
+import ax.xz.wireguard.device.message.response.IncomingResponse;
+import ax.xz.wireguard.device.message.transport.incoming.DecryptedIncomingTransport;
+import ax.xz.wireguard.device.message.transport.incoming.UndecryptedIncomingTransport;
 import ax.xz.wireguard.noise.keys.NoisePresharedKey;
+import ax.xz.wireguard.noise.keys.NoisePrivateKey;
 import ax.xz.wireguard.noise.keys.NoisePublicKey;
+import ax.xz.wireguard.util.ReferenceCounted;
 
 import javax.annotation.Nullable;
 import java.net.InetSocketAddress;
+import java.nio.channels.DatagramChannel;
 import java.time.Duration;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static java.lang.System.Logger;
 import static java.lang.System.Logger.Level.DEBUG;
-import static java.lang.System.Logger.Level.WARNING;
 import static java.util.Objects.requireNonNull;
 
 public class Peer {
 	private static final Logger logger = System.getLogger(Peer.class.getName());
 
-	// a queue of transport messages that have been decrypted and need to be sent up the stack
-	private final BlockingQueue<BufferPool.BufferGuard> inboundTransportQueue;
 	private final PeerConnectionInfo connectionInfo;
-	private final WireguardDevice device;
-	private final BufferPool bufferPool;
 
 	private final SessionManager sessionManager;
+	private final TransportManager transportManager;
+	private final KeepaliveSender keepaliveSender;
 
 	private final AtomicBoolean started = new AtomicBoolean(false);
 
-	public Peer(WireguardDevice device, BlockingQueue<BufferPool.BufferGuard> inboundTransportQueue, PeerConnectionInfo connectionInfo, BufferPool bufferPool) {
-		this.inboundTransportQueue = inboundTransportQueue;
+	public Peer(WireguardDevice device, DatagramChannel channel, Pool pool, BlockingQueue<DecryptedIncomingTransport> interfaceBoundQueue, PeerConnectionInfo connectionInfo) {
 		this.connectionInfo = connectionInfo;
-		this.device = device;
-		this.bufferPool = bufferPool;
 
-		this.sessionManager = new SessionManager(this, device, connectionInfo);
+		this.sessionManager = new SessionManager(device, channel, connectionInfo, pool);
+		this.transportManager = new TransportManager(sessionManager, pool, interfaceBoundQueue);
+		this.keepaliveSender = new KeepaliveSender(sessionManager, transportManager);
 	}
 
-	public void start() {
+	public void start() throws InterruptedException {
 		if (!started.compareAndSet(false, true)) {
 			throw new IllegalStateException("Peer already started");
 		}
 
 		logger.log(DEBUG, "Started peer {0}", this);
-		sessionManager.run();
+
+		try (var executor = Executors.newThreadPerTaskExecutor(Thread.ofPlatform().factory())) {
+			executor.submit(sessionManager);
+			executor.submit(transportManager);
+			executor.submit(keepaliveSender);
+
+			executor.awaitTermination(999_999_999, TimeUnit.DAYS);
+		}
 	}
 
 	public NoisePublicKey getRemoteStatic() {
 		return connectionInfo.remoteStatic;
 	}
 
-	/**
-	 * Processes an inbound message from the peer.
-	 * Releases the buffer backing the message when done with it
-	 *
-	 * @param address the address the message was received from
-	 * @param message the message to process.  must be allocated from the device's buffer pool
-	 */
-	public void receiveInboundMessage(InetSocketAddress address, Message message) {
+	public void routeMessage(IncomingPeerPacket message) {
 		switch (message) {
-			case MessageTransport transport -> receiveTransport(transport);
-			case MessageInitiation initiation -> sessionManager.receiveInitiation(address, initiation);
-			case MessageResponse response -> sessionManager.receiveHandshakeResponse(response);
-			default -> logger.log(WARNING, "Received unexpected message type: {0}", message);
+			case IncomingResponse rp -> sessionManager.handleResponse(rp);
+			case IncomingInitiation ip -> sessionManager.handleInitiation(ip);
+			case UndecryptedIncomingTransport tp -> transportManager.handleIncomingTransport(tp);
 		}
 	}
 
-	private static final ExecutorService packetProcessor = ForkJoinPool.commonPool();
-
-	/**
-	 * Enqueues an inbound transport message to be processed.
-	 * Releases the transport buffer when done with it
-	 *
-	 * @param transport the transport message to enqueue
-	 */
-	void receiveTransport(MessageTransport transport) {
-		// no use waiting for a session, since if the session is not established, we will not be able to decrypt the message
-		// because any sessions created in the future will have a different keypair
-		var currentSession = sessionManager.tryGetSessionNow();
-		if (currentSession == null) {
-			transport.close();
-			return;
-		}
-
-		packetProcessor.execute(() -> decryptAndEnqueue(transport, currentSession));
-	}
-
-	/**
-	 * Sends the given transport data to the peer.
-	 *
-	 * @param data data to send
-	 */
-	public void enqueueTransportPacket(BufferPool.BufferGuard data) {
-		packetProcessor.execute(() -> {
-			try (data) {
-				var session = sessionManager.tryGetSessionNow();
-				if (session == null)
-					return;
-
-				var result = session.createTransportPacket(data.buffer());
-				device.queueTransmit(session.getOutboundPacketAddress(), result.bufferGuard());
-			}
-		});
-	}
-
-	/**
-	 * Decrypts a transport message and enqueues it for reading.  Releases the transport buffer when done with it
-	 */
-	private void decryptAndEnqueue(MessageTransport transport, EstablishedSession session) {
-		try (transport) {
-			if (transport.content().remaining() < 16) {
-				logger.log(WARNING, "Received transport message with invalid length");
-				return;
-			}
-
-			var result = bufferPool.acquire(transport.content().remaining() - 16);
-			session.decryptTransportPacket(transport, result.buffer());
-			result.buffer().flip();
-
-			if (result.buffer().remaining() == 0) {
-				logger.log(DEBUG, "Received keepalive");
-				result.close();
-			} else {
-				inboundTransportQueue.add(result);
-			}
-		} catch (Throwable e) {
-			logger.log(WARNING, "Error decrypting transport message", e);
-		}
+	public void sendTransportMessage(ReferenceCounted<PacketElement.IncomingTunnelPacket> guard) {
+		transportManager.sendOutgoingTransport(guard);
 	}
 
 	@Override
@@ -163,8 +104,9 @@ public class Peer {
 		return session.getOutboundPacketAddress().toString();
 	}
 
-	public record PeerConnectionInfo(NoisePublicKey remoteStatic, @Nullable NoisePresharedKey presharedKey,
-									 @Nullable InetSocketAddress endpoint, @Nullable Duration keepaliveInterval) {
+	public record PeerConnectionInfo(NoisePrivateKey localStaticIdentity, NoisePublicKey remoteStatic,
+									 @Nullable NoisePresharedKey presharedKey,
+									 @Nullable InetSocketAddress endpoint, Duration keepaliveInterval) {
 		public PeerConnectionInfo {
 			requireNonNull(remoteStatic);
 

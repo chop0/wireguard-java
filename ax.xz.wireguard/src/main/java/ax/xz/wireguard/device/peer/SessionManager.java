@@ -1,43 +1,56 @@
 package ax.xz.wireguard.device.peer;
 
+import ax.xz.wireguard.device.Pool;
 import ax.xz.wireguard.device.WireguardDevice;
-import ax.xz.wireguard.device.message.MessageInitiation;
-import ax.xz.wireguard.device.message.MessageResponse;
+import ax.xz.wireguard.device.message.OutgoingPeerPacket;
+import ax.xz.wireguard.device.message.initiation.IncomingInitiation;
+import ax.xz.wireguard.device.message.initiation.OutgoingInitiation;
+import ax.xz.wireguard.device.message.response.IncomingResponse;
+import ax.xz.wireguard.device.message.response.OutgoingResponse;
+import ax.xz.wireguard.noise.handshake.Handshakes;
 import ax.xz.wireguard.util.PersistentTaskExecutor;
-import ax.xz.wireguard.util.RelinquishingQueue;
 
 import javax.annotation.Nullable;
+import javax.annotation.WillClose;
 import javax.annotation.concurrent.GuardedBy;
+import javax.crypto.BadPaddingException;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.nio.channels.DatagramChannel;
 import java.time.Duration;
-import java.time.Instant;
-import java.util.Map;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
 import static java.lang.System.Logger;
 import static java.lang.System.Logger.Level.*;
 
-final class SessionManager {
+final class SessionManager implements Runnable {
+	private static final Duration DEFAULT_KEEPALIVE_INTERVAL = Duration.ofSeconds(25);
 	private static final int HANDSHAKE_ATTEMPTS = 5;
 
-	private Logger logger;
+	private static final Logger logger = System.getLogger(SessionManager.class.getName());
 
-	private final Peer peer;
+	/**
+	 * The lock protecting all the session state
+	 */
+	final ReentrantLock lock = new ReentrantLock();
 
-	// The lock behind which all peer state is stored
-	private final ReentrantLock lock = new ReentrantLock();
-	// The condition that is signalled when the peer state is modified
-	private final Condition sessionCondition = lock.newCondition();
+	/**
+	 * The condition that is signalled when the peer state is modified
+	 */
+	final Condition condition = lock.newCondition();
 
-	// A queue of inbound handshake response messages
-	private final RelinquishingQueue<MessageResponse> inboundHandshakeResponseQueue = new RelinquishingQueue<>(lock);
+	private final DatagramChannel channel;
 
-	// A queue of inbound handshake initiation messages
-	private final RelinquishingQueue<Map.Entry<MessageInitiation, InetSocketAddress>> inboundHandshakeInitiationQueue = new RelinquishingQueue<>(lock);
+
+	// A queue of inbound handshake response messages [other peer -> this peer]
+	private final BlockingQueue<IncomingResponse> inboundHandshakeResponseQueue = new LinkedBlockingQueue<>();
+
+	// A queue of inbound handshake initiation messages [other peer -> this peer]
+	private final BlockingQueue<IncomingInitiation> inboundHandshakeInitiationQueue = new LinkedBlockingQueue<>();
 
 	// The keys and addresses used to connect to the peer
 	private final Peer.PeerConnectionInfo connectionInfo;
@@ -48,19 +61,19 @@ final class SessionManager {
 	// The current session.  Null iff no session is established and a handshake has not begun. This is private by peerLock.
 	private EstablishedSession session;
 
-	SessionManager(Peer peer, WireguardDevice device, Peer.PeerConnectionInfo connectionInfo) {
-		this.peer = peer;
+	private final Pool pool;
+
+	SessionManager(WireguardDevice device, DatagramChannel bidirectionalChannel, Peer.PeerConnectionInfo connectionInfo, Pool pool) {
 		this.connectionInfo = connectionInfo;
+		this.channel = bidirectionalChannel;
 		this.device = device;
+		this.pool = pool;
 	}
 
 	public void run() {
-		logger = System.getLogger("[%s] %s".formatted(peer, SessionManager.class.getSimpleName()));
-
 		try (var executor = new PersistentTaskExecutor<>(IOException::new, logger, Thread.ofVirtual().factory())) {
 			executor.submit("Session initiation thread", this::sessionInitiationThread);
 			executor.submit("Handshake responder thread", this::handshakeResponderThread);
-			executor.submit("Keepalive thread", this::keepaliveThread);
 
 			executor.awaitTermination();
 		} catch (InterruptedException e) {
@@ -80,11 +93,15 @@ final class SessionManager {
 
 		try {
 			while (!Thread.interrupted()) {
-				attemptSessionRecoveryIfRequired();
-				if (session == null)
-					sessionCondition.await();
-				else
-					sessionCondition.await(Duration.between(Instant.now(), session.expiration()).toMillis(), TimeUnit.MILLISECONDS);
+				if (!isSessionAlive() && canInitiateHandshake())
+					for (int i = 0; i < HANDSHAKE_ATTEMPTS; i++) {
+						logger.log(INFO, "Initiating handshake with {0} (try {1} of {2})", connectionInfo, i + 1, HANDSHAKE_ATTEMPTS);
+
+						if (attemptInitiatorHandshake())
+							break;
+					}
+
+				condition.await();
 			}
 		} catch (InterruptedException e) {
 			logger.log(DEBUG, "Session initiation thread interrupted");
@@ -94,35 +111,14 @@ final class SessionManager {
 		}
 	}
 
-	private void keepaliveThread() {
-		lock.lock();
-
-		try {
-			while (!Thread.interrupted()) {
-				sendKeepaliveIfNeeded();
-
-				if (session == null)
-					sessionCondition.await();
-				else
-					sessionCondition.await(session.keepaliveInterval().toMillis(), TimeUnit.MILLISECONDS);
-			}
-		} catch (InterruptedException e) {
-			logger.log(DEBUG, "Keepalive worker interrupted");
-			Thread.currentThread().interrupt();
-		} catch (Exception e) {
-			logger.log(ERROR, "Keepalive worker failed", e);
-		} finally {
-			lock.unlock();
-			logger.log(DEBUG, "Keepalive worker shutting down");
-		}
-	}
-
 	private void handshakeResponderThread() {
 		lock.lock();
 
 		try {
 			while (!Thread.interrupted()) {
-				handleNextInitiation();
+				try (var initiation = inboundHandshakeInitiationQueue.take()) {
+					performHandshakeResponse(initiation);
+				}
 			}
 		} catch (InterruptedException e) {
 			logger.log(DEBUG, "Handshake responder interrupted");
@@ -134,96 +130,120 @@ final class SessionManager {
 	}
 
 	@GuardedBy("lock")
-	private void handleNextInitiation() throws InterruptedException {
-		var message = inboundHandshakeInitiationQueue.take();
-
+	private void performHandshakeResponse(IncomingInitiation initiation) throws InterruptedException {
 		try {
-			var initiation = message.getKey();
-			var origin = message.getValue();
+			var handshake = Handshakes.responderHandshake(connectionInfo.localStaticIdentity(), initiation.ephemeral(), initiation.encryptedStatic(), initiation.encryptedTimestamp());
 
-			setSession(HandshakeResponder.respond(device, initiation, connectionInfo.keepaliveInterval(), origin, device.allocateNewSessionIndex(peer)));
+			int localIndex = allocateNewSessionIndex();
+			var packet = new OutgoingResponse(
+				pool.acquire(),
+				initiation.originAddress(),
+
+				localIndex,
+				initiation.senderIndex(),
+
+				handshake.getLocalEphemeral(),
+				handshake.getEncryptedEmpty(),
+				handshake.getRemotePublicKey()
+			);
+
+			transmit(packet, initiation.originAddress());
+
+			setSession(new EstablishedSession(handshake.getKeypair(), initiation.originAddress(), initiation.senderIndex(), DEFAULT_KEEPALIVE_INTERVAL));
 			logger.log(INFO, "Completed handshake (responder)");
 		} catch (IOException e) {
 			logger.log(WARNING, "Failed to complete handshake (responder)", e);
-			killSession();
-		} finally {
-			message.getKey().close();
+		} catch (BadPaddingException e) {
+			logger.log(WARNING, "Failed to decrypt handshake initiation", e);
 		}
 	}
 
+	/**
+	 * Attempts to initiate a handshake with the peer.  Returns true if the handshake was successful, false otherwise.
+	 * @return true if the handshake was successful, false otherwise
+	 */
 	@GuardedBy("lock")
-	private void attemptSessionRecoveryIfRequired() throws InterruptedException {
-		if (connectionInfo.endpoint() == null || !(session == null || session.isExpired())) {
-			return;
-		}
+	private boolean attemptInitiatorHandshake() {
+		try {
+			var handshake = Handshakes.initiateHandshake(connectionInfo.localStaticIdentity(), connectionInfo.remoteStatic(), connectionInfo.presharedKey());
 
-		for (int i = 0; i < HANDSHAKE_ATTEMPTS; i++) {
-			logger.log(INFO, "Initiating handshake with {0} (try {1} of {2})", connectionInfo, i + 1, HANDSHAKE_ATTEMPTS);
+			int localIndex = allocateNewSessionIndex();
+			var packet = new OutgoingInitiation(
+				pool.acquire(),
+				localIndex,
 
-			try {
-				var initiator = HandshakeInitiator.initiate(device, connectionInfo, device.allocateNewSessionIndex(peer));
+				handshake.getLocalEphemeral().publicKey(),
+				handshake.getEncryptedStatic(),
+				handshake.getEncryptedTimestamp(),
 
-				MessageResponse response;
-				try {
-					response = inboundHandshakeResponseQueue.poll(Duration.ofSeconds(5));
-				} catch (TimeoutException ex) {
-					logger.log(WARNING, "Handshake response timed out");
-					continue;
-				}
+				connectionInfo.remoteStatic()
+			);
 
-				try {
-					initiator.consumeResponse(response);
-					setSession(initiator.getSession());
-				} finally {
-					response.close();
-				}
+			transmit(packet, connectionInfo.endpoint());
 
-				logger.log(INFO, "Completed handshake (initiator)");
-				break;
-			} catch (IOException e) {
-				logger.log(WARNING, "Handshake failed", e);
+			var response = inboundHandshakeResponseQueue.poll(5, TimeUnit.SECONDS);
+			if (response == null) {
+				logger.log(WARNING, "Handshake response timed out");
+				return false;
 			}
-		}
-	}
 
-	@GuardedBy("lock")
-	private void sendKeepaliveIfNeeded() throws InterruptedException, IOException {
-		if (session != null && session.needsKeepalive()) {
-			session.sendKeepalive(device);
-			logger.log(DEBUG, "Sent keepalive");
-		}
-	}
+			try (response) {
+				var kp = handshake.consumeMessageResponse(response.ephemeral(), response.encryptedNothing());
+				setSession(new EstablishedSession(kp, connectionInfo.endpoint(), response.receiverIndex(), connectionInfo.keepaliveInterval()));
+			} catch (BadPaddingException ex) {
+				throw new IOException("Failed to decrypt response", ex);
+			}
 
-	/**
-	 * Enqueues an inbound handshake response message to be processed.
-	 * Eventually releases the buffer backing `message` when done with it
-	 *
-	 * @param message the message to enqueue
-	 */
-	void receiveHandshakeResponse(MessageResponse message) {
-		lock.lock();
-
-		try {
-			inboundHandshakeResponseQueue.offer(message);
-		} finally {
-			lock.unlock();
+			logger.log(INFO, "Completed handshake (initiator)");
+			return true;
+		} catch (IOException | InterruptedException e) {
+			logger.log(WARNING, "Handshake failed", e);
+			return false;
 		}
 	}
 
 	/**
-	 * Enqueues an inbound handshake initiation message to be processed.
-	 * Releases the transport buffer when done with it
-	 *
-	 * @param address                         the address the message was received from
-	 * @param messageInitiationInboundMessage the message to enqueue
+	 * Returns true if the session is alive, false otherwise
 	 */
-	void receiveInitiation(InetSocketAddress address, MessageInitiation messageInitiationInboundMessage) {
-		lock.lock();
+	private boolean isSessionAlive() {
+		var session = this.session;
+		return session != null && !session.isExpired();
+	}
 
-		try {
-			inboundHandshakeInitiationQueue.offer(Map.entry(messageInitiationInboundMessage, address));
-		} finally {
-			lock.unlock();
+	/**
+	 * Returns true if we can initiate a handshake, false otherwise
+	 */
+	private boolean canInitiateHandshake() {
+		return connectionInfo.endpoint() != null;
+	}
+
+	/**
+	 * Handles an incoming initiation message from the peer.
+	 *
+	 * @param message the message to handle
+	 * @return true if the message was handled, false if it was dropped
+	 */
+	boolean handleInitiation(IncomingInitiation message) {
+		return inboundHandshakeInitiationQueue.offer(message);
+	}
+
+	/**
+	 * Handles an incoming initiation message from the peer.
+	 *
+	 * @param message the message to handle
+	 * @return true if the message was handled, false if it was dropped
+	 */
+	boolean handleResponse(IncomingResponse message) {
+		return inboundHandshakeResponseQueue.offer(message);
+	}
+
+	/**
+	 * Transmits the given packet to the given address and returns its backing buffer to the pool.
+	 * This method does not route transport data (inc. keepalives), and only should be used for session control packets.
+	 */
+	private void transmit(@WillClose OutgoingPeerPacket packet, InetSocketAddress destination) throws IOException {
+		try (packet) {
+			channel.send(packet.transmissiblePacket().asByteBuffer(), destination);
 		}
 	}
 
@@ -233,7 +253,14 @@ final class SessionManager {
 	@GuardedBy("lock")
 	private void setSession(@Nullable EstablishedSession session) {
 		this.session = session;
-		sessionCondition.signalAll();
+		condition.signalAll();
+	}
+
+	/**
+	 * Allocates a new session index and tells the device to route packets with that index to this peer.
+	 */
+	private int allocateNewSessionIndex() {
+		return device.allocateNewSessionIndex(connectionInfo.remoteStatic());
 	}
 
 
@@ -254,6 +281,12 @@ final class SessionManager {
 	}
 
 	private void cleanup() {
+		try {
+			channel.close();
+		} catch (IOException e) {
+			logger.log(WARNING, "Failed to close channel", e);
+		}
+
 		if (lock.tryLock()) {
 			try {
 				killSession();

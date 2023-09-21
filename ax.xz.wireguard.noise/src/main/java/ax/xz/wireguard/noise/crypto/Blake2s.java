@@ -1,4 +1,4 @@
-package ax.xz.wireguard.noise.crypto.internal;
+package ax.xz.wireguard.noise.crypto;
 
 import java.security.MessageDigest;
 import java.util.Arrays;

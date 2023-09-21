@@ -3,11 +3,15 @@ package ax.xz.wireguard.noise.keys;
 import ax.xz.wireguard.noise.crypto.internal.X25519;
 
 import java.io.Serializable;
+import java.lang.ref.Cleaner;
 import java.security.SecureRandom;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.Objects;
 
 public record NoisePrivateKey(byte[] data, NoisePublicKey publicKey) implements Serializable {
+	private static final Cleaner CLEANER = Cleaner.create();
+
 	public static final int LENGTH = 32;
 
 	public NoisePrivateKey {
@@ -17,6 +21,10 @@ public record NoisePrivateKey(byte[] data, NoisePublicKey publicKey) implements 
 		if (data.length != LENGTH) {
 			throw new IllegalArgumentException("NoisePrivateKey must be 32 bytes");
 		}
+
+		CLEANER.register(this, () -> {
+			Arrays.fill(data, (byte) 0);
+		});
 	}
 
 	NoisePrivateKey(byte[] data) {

@@ -4,11 +4,13 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
+import java.nio.channels.ReadableByteChannel;
+import java.nio.channels.WritableByteChannel;
 import java.util.Set;
 
-public interface Tun extends Closeable {
-	void write(ByteBuffer buffer) throws IOException;
-	void read(ByteBuffer buffer) throws IOException;
+public interface Tun extends Closeable, WritableByteChannel, ReadableByteChannel {
+	int write(ByteBuffer buffer) throws IOException;
+	int read(ByteBuffer buffer) throws IOException;
 
 	/**
 	 * Assigns the specified subnet to the interface.

@@ -5,7 +5,14 @@
 #include <jni.h>
 #include <net/if.h>
 #include <stdio.h>
+
+#ifdef __linux__
 #include <sys/sysinfo.h>
+//#define MULTIQUEUES get_nprocs()
+#define MULTIQUEUES 0
+#else
+#define MULTIQUEUES 0
+#endif
 
 static jobject createFdObject(JNIEnv *env, int fd) {
     jclass sharedSecretsCls = FIND_CLASS(env, "jdk/internal/access/SharedSecrets");
@@ -31,7 +38,7 @@ JNIEXPORT jobject JNICALL Java_ax_xz_raw_posix_POSIXTunProvider_open(JNIEnv *env
     jmethodID posixTunConstructor = GET_METHOD_ID(env, posixTunCls, "<init>", "([Ljava/io/FileDescriptor;Ljava/lang/String;)V");
 
     char name[IFNAMSIZ];
-    int queueCount = 0; // it's broken atm
+    int queueCount = MULTIQUEUES; // it's broken atm
     int queues[queueCount + 1]; // +1 for primary fd
 
     int primaryFd = IO_TRY(env, open_tun(name, sizeof(name), &queueCount, queues + 1));
@@ -76,10 +83,10 @@ JNIEXPORT int JNICALL Java_ax_xz_raw_posix_POSIXTun_mtu(JNIEnv *env, jobject tun
 	return mtu(name, sizeof(name));
 }
 
-JNIEXPORT jint JNICALL Java_ax_xz_raw_posix_POSIXTun_AFINET(JNIEnv *env, jclass clazz) {
+JNIEXPORT jint JNICALL Java_ax_xz_raw_posix_POSIXTunUtils_AFINET(JNIEnv *env, jclass clazz) {
 	return AF_INET;
 }
 
-JNIEXPORT jint JNICALL Java_ax_xz_raw_posix_POSIXTun_AFINET6(JNIEnv *env, jclass clazz) {
+JNIEXPORT jint JNICALL Java_ax_xz_raw_posix_POSIXTunUtils_AFINET6(JNIEnv *env, jclass clazz) {
 	return AF_INET6;
 }

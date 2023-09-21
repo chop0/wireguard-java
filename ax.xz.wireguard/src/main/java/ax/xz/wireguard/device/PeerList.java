@@ -1,12 +1,20 @@
 package ax.xz.wireguard.device;
 
-import ax.xz.wireguard.device.message.Message;
+import ax.xz.wireguard.device.message.IncomingPeerPacket;
+import ax.xz.wireguard.device.message.PacketElement;
+import ax.xz.wireguard.device.message.initiation.IncomingInitiation;
+import ax.xz.wireguard.device.message.response.IncomingResponse;
+import ax.xz.wireguard.device.message.transport.incoming.UndecryptedIncomingTransport;
 import ax.xz.wireguard.device.peer.Peer;
+import ax.xz.wireguard.noise.handshake.Handshakes;
 import ax.xz.wireguard.noise.keys.NoisePresharedKey;
 import ax.xz.wireguard.noise.keys.NoisePublicKey;
+import ax.xz.wireguard.util.ReferenceCounted;
 
 import javax.annotation.Nullable;
+import javax.annotation.WillClose;
 import javax.annotation.concurrent.GuardedBy;
+import javax.crypto.BadPaddingException;
 import java.net.InetSocketAddress;
 import java.time.Duration;
 import java.util.*;
@@ -31,11 +39,12 @@ class PeerList {
 		this.device = device;
 	}
 
+	// TODO:  this (and the other addPeer) is shit
 	public void addPeer(NoisePublicKey publicKey, NoisePresharedKey noisePresharedKey, Duration keepaliveInterval, @Nullable InetSocketAddress endpoint) {
 		peerListLock.writeLock().lock();
 
 		try {
-			var peer = new Peer(device, device.inboundTransportQueue, new Peer.PeerConnectionInfo(publicKey, noisePresharedKey, endpoint, keepaliveInterval), device.getBufferPool());
+			var peer = new Peer(device, device.datagramChannel, device.getBufferPool(), device.inboundTransportQueue, new Peer.PeerConnectionInfo(device.getStaticIdentity(), publicKey, noisePresharedKey, endpoint, keepaliveInterval));
 			registerPeer(peer);
 		} finally {
 			peerListLock.writeLock().unlock();
@@ -44,63 +53,66 @@ class PeerList {
 
 	@GuardedBy("peerListLock.writeLock()")
 	private void addPeer(NoisePublicKey publicKey) {
-		var peer = new Peer(device, device.inboundTransportQueue, new Peer.PeerConnectionInfo(publicKey, null, null, null), device.getBufferPool());
+		var peer = new Peer(device, device.datagramChannel, device.getBufferPool(), device.inboundTransportQueue, new Peer.PeerConnectionInfo(device.getStaticIdentity(), publicKey, null, null, null));
 		registerPeer(peer);
 	}
 
-	public void routeMessageInwards(InetSocketAddress origin, NoisePublicKey originPublicKey, Message message) {
+	public void handlePacket(IncomingPeerPacket incomingPeerPacket) {
+		try {
+			int receiverIndex = switch (incomingPeerPacket) {
+				case IncomingInitiation initiation -> addPeerFromInitiation(initiation);
+				case IncomingResponse response -> response.receiverIndex();
+				case UndecryptedIncomingTransport transport -> transport.receiverIndex();
+			};
+
+			innerList.get(receiverIndex).routeMessage(incomingPeerPacket);
+		} catch (BadPaddingException e) {
+			log.log(DEBUG, "Could not decrypt packet", e);
+		}
+	}
+
+	/**
+	 * Attempts to decrypt the public key in the given initiation message and add it to the peer list.
+	 * @param initiation the initiation message
+	 * @return the index of the peer in the peer list
+	 * @throws BadPaddingException if the initiation message could not be decrypted
+	 */
+	private int addPeerFromInitiation(IncomingInitiation initiation) throws BadPaddingException {
+		var originPublicKey = Handshakes.decryptRemoteStatic(device.getStaticIdentity(), initiation.ephemeral(), initiation.encryptedStatic(), initiation.encryptedTimestamp());
+
 		peerListLock.writeLock().lock(); // must be write lock because we might add a new peer
 
 		try {
 			if (!innerList.contains(originPublicKey))
 				addPeer(originPublicKey);
 
-			var peer = innerList.peerOf(originPublicKey);
-			peer.receiveInboundMessage(origin, message);
+			return innerList.indexOf(originPublicKey);
 		} finally {
 			peerListLock.writeLock().unlock();
 		}
 	}
 
-	public void routeMessageInwards(InetSocketAddress origin, int originIndex, Message message) {
-		var peer = innerList.get(originIndex);
-		if (peer == null) {
-			log.log(DEBUG, "Received message from unknown peer {0}", origin);
-			message.close();
-			return;
-		}
-
-		peer.receiveInboundMessage(origin, message);
-	}
-
-	public void broadcastMessageOutwards(BufferPool.BufferGuard data) {
+	public void broadcastPacketToPeers(@WillClose PacketElement.IncomingTunnelPacket data) {
 		peerListLock.readLock().lock();
 
-		try {
+		try (var rc = ReferenceCounted.of(data)) { // ok because it's reference counted
 			for (var iterator = innerList.iterator(); iterator.hasNext(); ) {
 				var peer = iterator.next();
 
-				peer.enqueueTransportPacket(iterator.hasNext() ? data.clone() : data);
+				peer.sendTransportMessage(rc.retain());
 			}
-
-			if (innerList.peerCount() == 0) {
-				data.close();
-			}
-		} finally {
+		}  finally {
 			peerListLock.readLock().unlock();
 		}
 	}
 
-	public int allocateNewIndex(Peer peer) {
+	public int allocateNewIndex(NoisePublicKey peer) {
 		peerListLock.writeLock().lock();
 
 		try {
-			var existingPeer = innerList.peerOf(peer.getRemoteStatic());
+			var existingPeer = innerList.peerOf(peer);
 			if (existingPeer == null)
 				throw new IllegalStateException("Peer does not exist");
-
-			if (existingPeer != peer)
-				throw new IllegalStateException("A different peer with the same public key already exists");
 
 			return innerList.shuffle(peer);
 		} finally {
@@ -131,7 +143,7 @@ class PeerList {
 		peerListLock.writeLock().lock();
 
 		try {
-			innerList.remove(peer);
+			innerList.remove(peer.getRemoteStatic());
 			peerExecutor.stopPeer(peer.getRemoteStatic());
 
 			log.log(DEBUG, "Deregistered peer {0}", peer);
@@ -161,19 +173,24 @@ class PeerList {
 			return peers[index];
 		}
 
-		public void remove(int index) {
+		public Peer remove(int index) {
+			var oldPeer = peers[index];
+			if (oldPeer == null)
+				throw new NoSuchElementException("Peer does not exist");
+
 			peerMap.remove(peers[index].getRemoteStatic());
 			peers[index] = null;
-
 			freeIndices.addLast(index);
+
+			return oldPeer;
 		}
 
-		public void remove(Peer peer) {
-			remove(indexOf(peer.getRemoteStatic()));
+		public Peer remove(NoisePublicKey peer) {
+			return remove(indexOf(peer));
 		}
 
-		public int shuffle(Peer peer) {
-			remove(peer);
+		public int shuffle(NoisePublicKey key) {
+			var peer = remove(indexOf(key));
 			return insert(peer);
 		}
 
@@ -244,6 +261,8 @@ class PeerList {
 			Runnable peerRunnable = () -> {
 				try {
 					peer.start();
+				} catch (InterruptedException e) {
+					// ignore
 				} finally {
 					log.log(DEBUG, "Peer {0} exited", peer);
 					deregisterPeer(peer);
