@@ -1,7 +1,7 @@
 package ax.xz.wireguard.device;
 
 import ax.xz.raw.spi.Tun;
-import ax.xz.wireguard.device.message.PacketElement;
+import ax.xz.wireguard.device.message.tunnel.UninitialisedIncomingTunnelPacket;
 import ax.xz.wireguard.util.PersistentTaskExecutor;
 
 import java.io.IOException;
@@ -29,7 +29,7 @@ public class TunnelDeviceBond {
 
 			sts.submit("Tunnel read worker", () -> {
 				while (!Thread.interrupted()) {
-					var buffer = new PacketElement.UninitialisedIncomingTunnelPacket(device.getBufferPool().acquire());
+					var buffer = new UninitialisedIncomingTunnelPacket(device.getBufferPool().acquire());
 
 					try {
 						var packet = buffer.initialise(tunnel::read);

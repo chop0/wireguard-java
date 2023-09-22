@@ -8,6 +8,7 @@ import ax.xz.wireguard.device.message.initiation.OutgoingInitiation;
 import ax.xz.wireguard.device.message.response.IncomingResponse;
 import ax.xz.wireguard.device.message.response.OutgoingResponse;
 import ax.xz.wireguard.noise.handshake.Handshakes;
+import ax.xz.wireguard.noise.keys.NoisePrivateKey;
 import ax.xz.wireguard.util.PersistentTaskExecutor;
 
 import javax.annotation.Nullable;
@@ -54,19 +55,19 @@ final class SessionManager implements Runnable {
 
 	// The keys and addresses used to connect to the peer
 	private final Peer.PeerConnectionInfo connectionInfo;
+	private final NoisePrivateKey localIdentity;
 
 	// The device through which we communicate with the peer
 	private final WireguardDevice device;
-
+	private final Pool pool;
 	// The current session.  Null iff no session is established and a handshake has not begun. This is private by peerLock.
 	private EstablishedSession session;
 
-	private final Pool pool;
-
-	SessionManager(WireguardDevice device, DatagramChannel bidirectionalChannel, Peer.PeerConnectionInfo connectionInfo, Pool pool) {
+	SessionManager(WireguardDevice device, DatagramChannel bidirectionalChannel, Peer.PeerConnectionInfo connectionInfo, NoisePrivateKey localIdentity, Pool pool) {
 		this.connectionInfo = connectionInfo;
 		this.channel = bidirectionalChannel;
 		this.device = device;
+		this.localIdentity = localIdentity;
 		this.pool = pool;
 	}
 
@@ -93,13 +94,11 @@ final class SessionManager implements Runnable {
 
 		try {
 			while (!Thread.interrupted()) {
-				if (!isSessionAlive() && canInitiateHandshake())
-					for (int i = 0; i < HANDSHAKE_ATTEMPTS; i++) {
-						logger.log(INFO, "Initiating handshake with {0} (try {1} of {2})", connectionInfo, i + 1, HANDSHAKE_ATTEMPTS);
+				if (!isSessionAlive() && canInitiateHandshake()) for (int i = 0; i < HANDSHAKE_ATTEMPTS; i++) {
+					logger.log(INFO, "Initiating handshake with {0} (try {1} of {2})", connectionInfo, i + 1, HANDSHAKE_ATTEMPTS);
 
-						if (attemptInitiatorHandshake())
-							break;
-					}
+					if (attemptInitiatorHandshake()) break;
+				}
 
 				condition.await();
 			}
@@ -129,43 +128,48 @@ final class SessionManager implements Runnable {
 		}
 	}
 
-	@GuardedBy("lock")
-	private void performHandshakeResponse(IncomingInitiation initiation) throws InterruptedException {
+	private void cleanup() {
 		try {
-			var handshake = Handshakes.responderHandshake(connectionInfo.localStaticIdentity(), initiation.ephemeral(), initiation.encryptedStatic(), initiation.encryptedTimestamp());
-
-			int localIndex = allocateNewSessionIndex();
-			var packet = new OutgoingResponse(
-				pool.acquire(),
-				initiation.originAddress(),
-
-				localIndex,
-				initiation.senderIndex(),
-
-				handshake.getLocalEphemeral(),
-				handshake.getEncryptedEmpty(),
-				handshake.getRemotePublicKey()
-			);
-
-			transmit(packet, initiation.originAddress());
-
-			setSession(new EstablishedSession(handshake.getKeypair(), initiation.originAddress(), initiation.senderIndex(), DEFAULT_KEEPALIVE_INTERVAL));
-			logger.log(INFO, "Completed handshake (responder)");
+			channel.close();
 		} catch (IOException e) {
-			logger.log(WARNING, "Failed to complete handshake (responder)", e);
-		} catch (BadPaddingException e) {
-			logger.log(WARNING, "Failed to decrypt handshake initiation", e);
+			logger.log(WARNING, "Failed to close channel", e);
+		}
+
+		if (lock.tryLock()) {
+			try {
+				killSession();
+			} finally {
+				lock.unlock();
+			}
+		} else {
+			logger.log(ERROR, "Failed to acquire lock, even though all workers should be shut down.  This is a bug.");
 		}
 	}
 
 	/**
+	 * Returns true if the session is alive, false otherwise
+	 */
+	private boolean isSessionAlive() {
+		var session = this.session;
+		return session != null && !session.isExpired();
+	}
+
+	/**
+	 * Returns true if we can initiate a handshake, false otherwise
+	 */
+	private boolean canInitiateHandshake() {
+		return connectionInfo.endpoint() != null;
+	}
+
+	/**
 	 * Attempts to initiate a handshake with the peer.  Returns true if the handshake was successful, false otherwise.
+	 *
 	 * @return true if the handshake was successful, false otherwise
 	 */
 	@GuardedBy("lock")
 	private boolean attemptInitiatorHandshake() {
 		try {
-			var handshake = Handshakes.initiateHandshake(connectionInfo.localStaticIdentity(), connectionInfo.remoteStatic(), connectionInfo.presharedKey());
+			var handshake = Handshakes.initiateHandshake(localIdentity, connectionInfo.remoteStatic(), connectionInfo.presharedKey());
 
 			int localIndex = allocateNewSessionIndex();
 			var packet = new OutgoingInitiation(
@@ -202,39 +206,48 @@ final class SessionManager implements Runnable {
 		}
 	}
 
-	/**
-	 * Returns true if the session is alive, false otherwise
-	 */
-	private boolean isSessionAlive() {
-		var session = this.session;
-		return session != null && !session.isExpired();
+	@GuardedBy("lock")
+	private void performHandshakeResponse(IncomingInitiation initiation) throws InterruptedException {
+		try {
+			var handshake = Handshakes.responderHandshake(localIdentity, initiation.ephemeral(), initiation.encryptedStatic(), initiation.encryptedTimestamp());
+
+			int localIndex = allocateNewSessionIndex();
+			var packet = new OutgoingResponse(
+				pool.acquire(),
+				initiation.originAddress(),
+
+				localIndex,
+				initiation.senderIndex(),
+
+				handshake.getLocalEphemeral(),
+				handshake.getEncryptedEmpty(),
+				handshake.getRemotePublicKey()
+			);
+
+			transmit(packet, initiation.originAddress());
+
+			setSession(new EstablishedSession(handshake.getKeypair(), initiation.originAddress(), initiation.senderIndex(), DEFAULT_KEEPALIVE_INTERVAL));
+			logger.log(INFO, "Completed handshake (responder)");
+		} catch (IOException e) {
+			logger.log(WARNING, "Failed to complete handshake (responder)", e);
+		} catch (BadPaddingException e) {
+			logger.log(WARNING, "Failed to decrypt handshake initiation", e);
+		}
 	}
 
 	/**
-	 * Returns true if we can initiate a handshake, false otherwise
+	 * Marks the session as dead.  Requires that the peerLock be held.
 	 */
-	private boolean canInitiateHandshake() {
-		return connectionInfo.endpoint() != null;
+	@GuardedBy("lock")
+	private void killSession() {
+		setSession(null);
 	}
 
 	/**
-	 * Handles an incoming initiation message from the peer.
-	 *
-	 * @param message the message to handle
-	 * @return true if the message was handled, false if it was dropped
+	 * Allocates a new session index and tells the device to route packets with that index to this peer.
 	 */
-	boolean handleInitiation(IncomingInitiation message) {
-		return inboundHandshakeInitiationQueue.offer(message);
-	}
-
-	/**
-	 * Handles an incoming initiation message from the peer.
-	 *
-	 * @param message the message to handle
-	 * @return true if the message was handled, false if it was dropped
-	 */
-	boolean handleResponse(IncomingResponse message) {
-		return inboundHandshakeResponseQueue.offer(message);
+	private int allocateNewSessionIndex() {
+		return device.allocateNewSessionIndex(connectionInfo.remoteStatic());
 	}
 
 	/**
@@ -257,12 +270,22 @@ final class SessionManager implements Runnable {
 	}
 
 	/**
-	 * Allocates a new session index and tells the device to route packets with that index to this peer.
+	 * Handles an incoming initiation message from the peer.
+	 *
+	 * @param message the message to handle
 	 */
-	private int allocateNewSessionIndex() {
-		return device.allocateNewSessionIndex(connectionInfo.remoteStatic());
+	void handleInitiation(IncomingInitiation message) {
+		inboundHandshakeInitiationQueue.offer(message);
 	}
 
+	/**
+	 * Handles an incoming response message from the peer.
+	 *
+	 * @param message the message to handle
+	 */
+	void handleResponse(IncomingResponse message) {
+		inboundHandshakeResponseQueue.offer(message);
+	}
 
 	/**
 	 * Returns the current session, or null if no session is established.
@@ -270,31 +293,5 @@ final class SessionManager implements Runnable {
 	@Nullable
 	EstablishedSession tryGetSessionNow() {
 		return session;
-	}
-
-	/**
-	 * Marks the session as dead.  Requires that the peerLock be held.
-	 */
-	@GuardedBy("lock")
-	private void killSession() {
-		setSession(null);
-	}
-
-	private void cleanup() {
-		try {
-			channel.close();
-		} catch (IOException e) {
-			logger.log(WARNING, "Failed to close channel", e);
-		}
-
-		if (lock.tryLock()) {
-			try {
-				killSession();
-			} finally {
-				lock.unlock();
-			}
-		} else {
-			logger.log(ERROR, "Failed to acquire lock, even though all workers should be shut down.  This is a bug.");
-		}
 	}
 }

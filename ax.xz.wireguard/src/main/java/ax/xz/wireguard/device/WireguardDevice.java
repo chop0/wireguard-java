@@ -1,8 +1,10 @@
 package ax.xz.wireguard.device;
 
 import ax.xz.wireguard.device.message.IncomingPeerPacket;
+import ax.xz.wireguard.device.message.tunnel.IncomingTunnelPacket;
 import ax.xz.wireguard.device.message.PacketElement;
 import ax.xz.wireguard.device.message.transport.incoming.DecryptedIncomingTransport;
+import ax.xz.wireguard.device.peer.Peer;
 import ax.xz.wireguard.noise.keys.NoisePresharedKey;
 import ax.xz.wireguard.noise.keys.NoisePrivateKey;
 import ax.xz.wireguard.noise.keys.NoisePublicKey;
@@ -101,7 +103,7 @@ public final class WireguardDevice implements Closeable {
 	 * @param element an unencrypted packet to encrypt and send to all peers
 	 * @throws IOException if something goes wrong with the socket
 	 */
-	public void broadcastPacketToPeers(PacketElement.IncomingTunnelPacket element) throws IOException {
+	public void broadcastPacketToPeers(IncomingTunnelPacket element) throws IOException {
 		peerList.broadcastPacketToPeers(element);
 	}
 
@@ -132,8 +134,8 @@ public final class WireguardDevice implements Closeable {
 		return inboundTransportQueue.take();
 	}
 
-	public void addPeer(NoisePublicKey publicKey, NoisePresharedKey noisePresharedKey, Duration keepaliveInterval, @Nullable InetSocketAddress endpoint) {
-		peerList.addPeer(publicKey, noisePresharedKey, keepaliveInterval, endpoint);
+	public void addPeer(Peer.PeerConnectionInfo connectionInfo) {
+		peerList.addPeer(connectionInfo);
 	}
 
 	public int allocateNewSessionIndex(NoisePublicKey peer) {

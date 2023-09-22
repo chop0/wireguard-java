@@ -70,7 +70,7 @@ class KeepaliveSender implements Runnable {
 			if (currentSession == null)
 				return false;
 
-			return this.session == currentSession && Duration.between(time, Instant.now()).compareTo(currentSession.keepaliveInterval()) < 0;
+			return this.session == currentSession && Duration.between(time, Instant.now()).compareTo(currentSession.getKeepaliveInterval()) < 0;
 		}
 
 		/**
@@ -81,7 +81,7 @@ class KeepaliveSender implements Runnable {
 			if (session == null)
 				return ChronoUnit.FOREVER.getDuration();
 			else
-				return Duration.between(Instant.now(), time.plus(session.keepaliveInterval()));
+				return Duration.between(Instant.now(), time.plus(session.getKeepaliveInterval()));
 		}
 	}
 }

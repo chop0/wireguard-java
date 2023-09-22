@@ -20,7 +20,7 @@ import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 /**
  * {@link PacketElement} is the mechanism used to manage all buffers used throughout the lifecycle of a packet.
  */
-public sealed class PacketElement implements AutoCloseable permits PacketElement.IncomingTunnelPacket, PacketElement.Uninitialised, PacketElement.UninitialisedIncomingTunnelPacket, PacketElement.UnparsedIncomingPeerPacket, InitiationPacket, ResponsePacket, TransportPacket {
+public class PacketElement implements AutoCloseable {
 	private final Consumer<PacketElement> cleanup;
 
 	private final MemorySegment backing;
@@ -59,11 +59,21 @@ public sealed class PacketElement implements AutoCloseable permits PacketElement
 		return backing;
 	}
 
+	/**
+	 * An uninitialised packet holds a buffer whose contents are not guaranteed to be valid.
+	 * It should be only be used as a stateless precursor to other subclasses of {@link PacketElement}.
+	 */
 	public static final class Uninitialised extends PacketElement {
 		public Uninitialised(MemorySegment backing, Consumer<PacketElement> cleanup) {
 			super(backing, cleanup);
 		}
 
+		/**
+		 * Constructs an uninitialised packet by moving the contents of the given PacketElement.
+		 * Uses the same cleanup method as the old packet.
+		 * @param old
+		 * @return
+		 */
 		public static Uninitialised ofMoved(PacketElement old) {
 			return new Uninitialised(old.moveBacking(), old.cleanup);
 		}
@@ -105,61 +115,6 @@ public sealed class PacketElement implements AutoCloseable permits PacketElement
 
 		public interface Receiver {
 			InetSocketAddress receive(ByteBuffer t) throws IOException;
-		}
-	}
-
-	/**
-	 * An uninitialised packet coming from a tun device
-	 */
-	public static final class UninitialisedIncomingTunnelPacket extends PacketElement {
-		private boolean initialised = false;
-
-		public UninitialisedIncomingTunnelPacket(Uninitialised data) {
-			super(data);
-		}
-
-		/**
-		 * Initialises the data in this packet with the given function, and then parses the packet.
-		 * May only be called once.
-		 * @param initialiser the consumer that initialises the packet and returns the length of the packet
-		 * @return the parsed packet
-		 */
-		public IncomingTunnelPacket initialise(Receiver initialiser) throws IOException {
-			if (initialised) {
-				throw new IllegalStateException("Packet already initialised");
-			}
-			var bb = backing().asByteBuffer();
-			initialiser.receive(bb);
-			long packetLength = bb.flip().remaining();
-			initialised = true;
-
-			return new IncomingTunnelPacket(this, packetLength);
-		}
-
-		public interface Receiver {
-			void receive(ByteBuffer t) throws IOException;
-		}
-	}
-
-	/**
-	 * An IncomingTunnelPacket is a packet coming from a tun device.  Unlike most {@link PacketElement}s, which
-	 * are returned to the pool after the first invocation of {@link PacketElement#close}, {@link IncomingTunnelPacket} reference-counted
-	 * so it may be sent to multiple peers before being returned to the pool.
-	 */
-	public static final class IncomingTunnelPacket extends PacketElement {
-		private final long packetLength;
-
-		public IncomingTunnelPacket(UninitialisedIncomingTunnelPacket data, long packetLength) {
-			super(data);
-			this.packetLength = packetLength;
-		}
-
-		public long length() {
-			return packetLength;
-		}
-
-		public MemorySegment packet() {
-			return backing().asSlice(0, packetLength);
 		}
 	}
 

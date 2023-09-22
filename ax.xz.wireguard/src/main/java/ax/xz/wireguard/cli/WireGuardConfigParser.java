@@ -1,5 +1,7 @@
 package ax.xz.wireguard.cli;
 
+import ax.xz.wireguard.device.peer.Peer;
+import ax.xz.wireguard.util.IPFilter;
 import ax.xz.wireguard.util.IPUtils;
 import ax.xz.wireguard.noise.keys.NoisePresharedKey;
 import ax.xz.wireguard.noise.keys.NoisePrivateKey;
@@ -13,7 +15,7 @@ public class WireGuardConfigParser {
 	public static WireguardConfig parseConfig(String configContent) throws UnknownHostException {
 		Scanner scanner = new Scanner(configContent);
 		InterfaceConfig interfaceConfig = null;
-		List<PeerConfig> peers = new ArrayList<>();
+		List<Peer.PeerConnectionInfo> peers = new ArrayList<>();
 
 		var sections = new ArrayList<String>();
 		var currentSection = new StringBuilder();
@@ -95,10 +97,10 @@ public class WireGuardConfigParser {
 		return new InterfaceConfig(addresses, NoisePrivateKey.fromBase64(privateKey), listenPort);
 	}
 
-	private static PeerConfig parsePeerConfig(Scanner scanner) throws UnknownHostException {
+	private static Peer.PeerConnectionInfo parsePeerConfig(Scanner scanner) throws UnknownHostException {
 		String publicKey = null;
 		String presharedKey = null;
-		Set<InetAddress> allowedIPs = new HashSet<>();
+		Set<Map.Entry<InetAddress, Integer>> allowedIPs = new HashSet<>();
 		InetSocketAddress endpoint = null;
 		Duration persistentKeepAlive = null;
 
@@ -118,10 +120,15 @@ public class WireGuardConfigParser {
 			switch (parts[0].trim()) {
 				case "PublicKey" -> publicKey = parts[1].trim();
 				case "AllowedIPs" -> {
-//					String[] ips = parts[1].split(",");
-//					for (String ip : ips) {
-//						allowedIPs.add(InetAddress.getByName(ip.trim()));
-//					}
+					String[] ips = parts[1].split(",");
+					for (String ip : ips) {
+						if (!ip.contains("/")) {
+							allowedIPs.add(Map.entry(InetAddress.getByName(ip.trim()), 32));
+						} else {
+							var afterSlash = ip.split("/")[1].trim();
+							allowedIPs.add(Map.entry(InetAddress.getByName(ip.split("/")[0].trim()), Integer.parseInt(afterSlash)));
+						}
+					}
 				}
 				case "PresharedKey" -> presharedKey = parts[1].trim();
 				case "Endpoint" -> {
@@ -139,10 +146,21 @@ public class WireGuardConfigParser {
 			throw new RuntimeException("Incomplete [Peer] section in the config.");
 		}
 
-		return new PeerConfig(NoisePublicKey.fromBase64(publicKey), presharedKey == null ? null : NoisePresharedKey.fromBase64(presharedKey), allowedIPs, endpoint, persistentKeepAlive);
+		var filter = allowedIPs.isEmpty() ? IPFilter.allowingAll() : new IPFilter();
+		for (var entry : allowedIPs) {
+			filter.insert(entry.getKey(), entry.getValue());
+		}
+
+		return new Peer.PeerConnectionInfo(
+			NoisePublicKey.fromBase64(publicKey),
+			presharedKey == null ? NoisePresharedKey.zero() : NoisePresharedKey.fromBase64(presharedKey),
+			endpoint,
+			persistentKeepAlive == null ? Duration.ofDays(1_000_000_000) : persistentKeepAlive,
+			filter
+		);
 	}
 
-	public static InetSocketAddress parseIsr(String hostPort) throws UnknownHostException {
+	private static InetSocketAddress parseIsr(String hostPort) throws UnknownHostException {
 		if (hostPort == null || hostPort.isEmpty()) {
 			throw new IllegalArgumentException("Invalid host:port format");
 		}
@@ -166,14 +184,6 @@ public class WireGuardConfigParser {
 		return new InetSocketAddress(InetAddress.getByName(host), port);
 	}
 
-	public record WireguardConfig(InterfaceConfig interfaceConfig, List<PeerConfig> peers) {}
+	public record WireguardConfig(InterfaceConfig interfaceConfig, List<Peer.PeerConnectionInfo> peers) {}
 	public record InterfaceConfig(Set<Map.Entry<InetAddress, InetAddress>> addressWithMask, NoisePrivateKey privateKey, Integer listenPort) {}
-	public record PeerConfig(NoisePublicKey publicKey, NoisePresharedKey presharedKey, Set<InetAddress> allowedIPs, InetSocketAddress endpoint, Duration persistentKeepAlive) {
-		public PeerConfig {
-			if (presharedKey == null) {
-				presharedKey = new NoisePresharedKey(new byte[NoisePresharedKey.LENGTH]);
-			}
-		}
-	}
-
 }

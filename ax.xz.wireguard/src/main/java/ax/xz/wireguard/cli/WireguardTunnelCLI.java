@@ -49,12 +49,7 @@ public class WireguardTunnelCLI {
 			}
 
 			for (var peer : config.peers()) {
-				device.addPeer(
-					peer.publicKey(),
-					peer.presharedKey(),
-					peer.persistentKeepAlive(),
-					peer.endpoint()
-				);
+				device.addPeer(peer);
 			}
 
 			var coupling = new TunnelDeviceBond(device, tun);

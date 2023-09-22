@@ -99,10 +99,6 @@ final class EstablishedSession implements AutoCloseable {
 		return keypair.cipher(plaintext, ciphertext);
 	}
 
-	public Instant expiration() {
-		return expiration;
-	}
-
 	public InetSocketAddress getOutboundPacketAddress() {
 		return outboundPacketAddress;
 	}
@@ -118,11 +114,11 @@ final class EstablishedSession implements AutoCloseable {
 		return Instant.now().isAfter(expiration);
 	}
 
-	Duration keepaliveInterval() {
-		return keepaliveInterval;
-	}
-
 	public int getRemoteIndex() {
 		return remoteIndex;
+	}
+
+	public Duration getKeepaliveInterval() {
+		return keepaliveInterval;
 	}
 }

@@ -1,7 +1,7 @@
 package ax.xz.wireguard.device;
 
 import ax.xz.wireguard.device.message.IncomingPeerPacket;
-import ax.xz.wireguard.device.message.PacketElement;
+import ax.xz.wireguard.device.message.tunnel.IncomingTunnelPacket;
 import ax.xz.wireguard.device.message.initiation.IncomingInitiation;
 import ax.xz.wireguard.device.message.response.IncomingResponse;
 import ax.xz.wireguard.device.message.transport.incoming.UndecryptedIncomingTransport;
@@ -9,11 +9,11 @@ import ax.xz.wireguard.device.peer.Peer;
 import ax.xz.wireguard.noise.handshake.Handshakes;
 import ax.xz.wireguard.noise.keys.NoisePresharedKey;
 import ax.xz.wireguard.noise.keys.NoisePublicKey;
+import ax.xz.wireguard.util.IPFilter;
 import ax.xz.wireguard.util.ReferenceCounted;
 
 import javax.annotation.Nullable;
 import javax.annotation.WillClose;
-import javax.annotation.concurrent.GuardedBy;
 import javax.crypto.BadPaddingException;
 import java.net.InetSocketAddress;
 import java.time.Duration;
@@ -40,20 +40,13 @@ class PeerList {
 	}
 
 	// TODO:  this (and the other addPeer) is shit
-	public void addPeer(NoisePublicKey publicKey, NoisePresharedKey noisePresharedKey, Duration keepaliveInterval, @Nullable InetSocketAddress endpoint) {
-		peerListLock.writeLock().lock();
-
-		try {
-			var peer = new Peer(device, device.datagramChannel, device.getBufferPool(), device.inboundTransportQueue, new Peer.PeerConnectionInfo(device.getStaticIdentity(), publicKey, noisePresharedKey, endpoint, keepaliveInterval));
-			registerPeer(peer);
-		} finally {
-			peerListLock.writeLock().unlock();
-		}
+	public void addPeer(Peer.PeerConnectionInfo connectionInfo) {
+		var peer = new Peer(device, device.getStaticIdentity(), device.datagramChannel, device.getBufferPool(), device.inboundTransportQueue, connectionInfo);
+		registerPeer(peer);
 	}
 
-	@GuardedBy("peerListLock.writeLock()")
 	private void addPeer(NoisePublicKey publicKey) {
-		var peer = new Peer(device, device.datagramChannel, device.getBufferPool(), device.inboundTransportQueue, new Peer.PeerConnectionInfo(device.getStaticIdentity(), publicKey, null, null, null));
+		var peer = new Peer(device, device.getStaticIdentity(), device.datagramChannel, device.getBufferPool(), device.inboundTransportQueue, Peer.PeerConnectionInfo.of(publicKey));
 		registerPeer(peer);
 	}
 
@@ -92,7 +85,7 @@ class PeerList {
 		}
 	}
 
-	public void broadcastPacketToPeers(@WillClose PacketElement.IncomingTunnelPacket data) {
+	public void broadcastPacketToPeers(@WillClose IncomingTunnelPacket data) {
 		peerListLock.readLock().lock();
 
 		try (var rc = ReferenceCounted.of(data)) { // ok because it's reference counted
@@ -260,9 +253,7 @@ class PeerList {
 		public void submit(Peer peer) {
 			Runnable peerRunnable = () -> {
 				try {
-					peer.start();
-				} catch (InterruptedException e) {
-					// ignore
+					peer.run();
 				} finally {
 					log.log(DEBUG, "Peer {0} exited", peer);
 					deregisterPeer(peer);
