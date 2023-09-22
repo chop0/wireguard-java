@@ -6,11 +6,13 @@ import ax.xz.wireguard.device.TunnelDeviceBond;
 import ax.xz.wireguard.device.WireguardDevice;
 
 import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
 import java.net.InetSocketAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-import static java.lang.System.Logger.Level.*;
+import static java.lang.System.Logger.Level.DEBUG;
+import static java.lang.System.Logger.Level.ERROR;
 
 public class WireguardTunnelCLI {
 	private static final System.Logger logger = System.getLogger(WireguardTunnelCLI.class.getName());
@@ -35,8 +37,8 @@ public class WireguardTunnelCLI {
 		}
 
 		try (
-				var device = new WireguardDevice(config.interfaceConfig().privateKey());
-				var tun = TunProvider.getProvider().open()
+			var device = new WireguardDevice(config.interfaceConfig().privateKey());
+			var tun = TunProvider.getProvider().open()
 		) {
 			logger.log(DEBUG, "Opened tun device {0}", tun.toString());
 			tun.setMTU(1500);

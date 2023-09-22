@@ -108,9 +108,9 @@ public final class WireguardDevice implements Closeable {
 	}
 
 	private void receiveMessageFromPeer() throws IOException {
-		try {
-			var bg = new PacketElement.UnparsedIncomingPeerPacket(bufferPool.acquire());
+		var bg = new PacketElement.UnparsedIncomingPeerPacket(bufferPool.acquire());
 
+		try {
 			if (selector.select() > 0) {
 				var packet = bg.initialise(bb -> (InetSocketAddress) datagramChannel.receive(bb), staticIdentity.publicKey());
 
@@ -118,9 +118,12 @@ public final class WireguardDevice implements Closeable {
 
 				handlePacket(packet);
 				selector.selectedKeys().clear();
+			} else {
+				bg.close();
 			}
 		} catch (BadPaddingException e) {
 			log.log(WARNING, "Received message with invalid padding");
+			bg.close();
 		}
 	}
 

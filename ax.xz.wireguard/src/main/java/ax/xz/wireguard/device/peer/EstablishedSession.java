@@ -59,8 +59,9 @@ final class EstablishedSession implements AutoCloseable {
 	private void outboundSessionWorker() {
 		try {
 			while (!Thread.interrupted()) {
-				var packet = outboundSessionQueue.take();
-				channel.send(packet.transmissiblePacket().asByteBuffer(), outboundPacketAddress);
+				try (var packet = outboundSessionQueue.take()) {
+					channel.send(packet.transmissiblePacket().asByteBuffer(), outboundPacketAddress);
+				}
 			}
 		} catch (IOException e) {
 			log.log(ERROR, "Error sending packet", e);

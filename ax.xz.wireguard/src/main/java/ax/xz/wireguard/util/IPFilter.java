@@ -51,10 +51,11 @@ public class IPFilter {
 
 		boolean found = false;
 		for (int i = 0; i < ipBytes.byteSize() * 8; i++) {
+			if (node.isEndOfSubnet) found = true;
+
 			int bit = getBit(ipBytes, i) ? 1 : 0;
 			node = node.children[bit];
 			if (node == null) break;
-			if (node.isEndOfSubnet) found = true;
 		}
 		return found;
 	}

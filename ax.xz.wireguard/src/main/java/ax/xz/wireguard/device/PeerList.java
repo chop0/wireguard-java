@@ -58,6 +58,12 @@ class PeerList {
 				case UndecryptedIncomingTransport transport -> transport.receiverIndex();
 			};
 
+			var peer = innerList.get(receiverIndex);
+			if (peer == null) {
+				log.log(DEBUG, "Received message from unknown index {0}", receiverIndex);
+				return;
+			}
+
 			innerList.get(receiverIndex).routeMessage(incomingPeerPacket);
 		} catch (BadPaddingException e) {
 			log.log(DEBUG, "Could not decrypt packet", e);

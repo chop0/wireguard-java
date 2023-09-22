@@ -90,6 +90,8 @@ class TransportManager implements Runnable {
 			logger.log(WARNING, "Received transport message with invalid padding");
 			transport.close();
 		}
+
+		System.out.println("decrypt done");
 	}
 
 	/**
@@ -100,11 +102,11 @@ class TransportManager implements Runnable {
 
 		boolean sentToQueue;
 
-		if (!destinationFilter.search(destinationIPOf(plaintext))) {
-			logger.log(DEBUG, "Dropped packet with destination outside of allowed range");
-			sentToQueue = false;
-		} else if (plaintext.byteSize() == 0) {
+		if (plaintext.byteSize() == 0) {
 			logger.log(DEBUG, "Received keepalive");
+			sentToQueue = false;
+		} else if (!destinationFilter.search(destinationIPOf(plaintext))) {
+			logger.log(DEBUG, "Dropped packet with destination outside of allowed range");
 			sentToQueue = false;
 		} else if (!interfaceBoundQueue.offer(transport)) {
 			logger.log(WARNING, "Dropped decrypted packet on its way to the tun device");

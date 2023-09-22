@@ -106,7 +106,7 @@ public class ReferenceCounted<T extends AutoCloseable> implements AutoCloseable 
 				throw new IllegalStateException("Object already closed");
 			}
 
-			if ((int) REF_COUNT.getAndAdd(this, -1) <= 0) {
+			if ((int) REF_COUNT.getAndAdd(this, -1) <= 1) {
 				try {
 					object.close();
 				} catch (Exception e) {
