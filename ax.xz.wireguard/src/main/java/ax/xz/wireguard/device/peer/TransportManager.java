@@ -90,8 +90,6 @@ class TransportManager implements Runnable {
 			logger.log(WARNING, "Received transport message with invalid padding");
 			transport.close();
 		}
-
-		System.out.println("decrypt done");
 	}
 
 	/**

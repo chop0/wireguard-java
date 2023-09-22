@@ -53,7 +53,7 @@ public final class WireguardDevice implements Closeable {
 	private final AtomicLong bytesSent = new AtomicLong(0);
 	private final AtomicLong bytesReceived = new AtomicLong(0);
 
-	private final Pool bufferPool = new Pool(0x200);
+	private final Pool bufferPool = new Pool(0x500);
 
 	public WireguardDevice(NoisePrivateKey staticIdentity) {
 		this.staticIdentity = staticIdentity;
