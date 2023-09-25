@@ -74,14 +74,6 @@ public class ChaCha20 {
 	}
 
 
-	static int byteArrayToIntLittleEndian(byte[] b, int offset) {
-		return (b[offset] & 0xFF) |
-			   ((b[offset + 1] & 0xFF) << 8) |
-			   ((b[offset + 2] & 0xFF) << 16) |
-			   ((b[offset + 3] & 0xFF) << 24);
-	}
-
-
 	public static void chacha20Block(MemorySegment state, MemorySegment output, int counter) {
 		try {
 			state.setAtIndex(JAVA_INT, 12, counter);

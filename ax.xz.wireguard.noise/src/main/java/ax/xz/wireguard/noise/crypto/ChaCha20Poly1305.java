@@ -63,7 +63,7 @@ public class ChaCha20Poly1305 {
 	private static void chacha20Poly1305Tag(MemorySegment chacha20Key, MemorySegment nonce, MemorySegment aad, MemorySegment ciphertext, MemorySegment tag) {
 		record Cache(MemorySegment chacha20State, MemorySegment poly1305Key, Poly1305 poly1305, MemorySegment lengthBuffer) {
 			Cache(Arena arena) {
-				this(arena.allocateArray(JAVA_INT, 16), arena.allocateArray(JAVA_BYTE, 64), new Poly1305(arena), arena.allocateArray(JAVA_LONG, 2));
+				this(arena.allocateArray(JAVA_INT, 16), arena.allocateArray(JAVA_BYTE, 64), new NativePoly1305(arena), arena.allocateArray(JAVA_LONG, 2));
 			}
 
 			static final ThreadLocal<Cache> CACHE = ThreadLocal.withInitial(() -> new Cache(Arena.global()));

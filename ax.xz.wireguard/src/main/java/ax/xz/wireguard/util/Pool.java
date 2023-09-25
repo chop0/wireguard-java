@@ -1,4 +1,4 @@
-package ax.xz.wireguard.device;
+package ax.xz.wireguard.util;
 
 import ax.xz.wireguard.device.message.PacketElement;
 
@@ -6,8 +6,6 @@ import java.lang.foreign.Arena;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.util.concurrent.ConcurrentLinkedQueue;
-
-import static java.lang.System.Logger.Level.DEBUG;
 
 public class Pool implements AutoCloseable {
 	private static final int TCACHE_SIZE = 7;
@@ -90,9 +88,7 @@ public class Pool implements AutoCloseable {
 		}
 
 		NUM_ALLOCATED.getAndAdd(this, 1);
-		logger.log(DEBUG, "Item pool empty, allocating new item (allocated {0}, released {1})", numberAllocated, numberReleased);
-
-		// TODO:  big memory leak!  it crashes after 10 seconds!  oops!
+//		logger.log(DEBUG, "Item pool empty, allocating new item (allocated {0}, released {1})", numberAllocated, numberReleased);
 		return new PacketElement.Uninitialised(arena.allocate(4096), p -> release(PacketElement.Uninitialised.ofMoved(p)));
 	}
 
@@ -101,7 +97,7 @@ public class Pool implements AutoCloseable {
 			return;
 
 		if (poolSize + 1 > maxPoolSize) {
-			logger.log(DEBUG, "Item pool full, discarding item (allocated {0}, released {1})", numberAllocated, numberReleased);
+//			logger.log(DEBUG, "Item pool full, discarding item (allocated {0}, released {1})", numberAllocated, numberReleased);
 			return;
 		}
 

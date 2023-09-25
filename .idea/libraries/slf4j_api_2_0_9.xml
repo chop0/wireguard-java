@@ -1,0 +1,17 @@
+<component name="libraryTable">
+  <library name="slf4j-api-2.0.9">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/stress-test/slf4j-api-2.0.9.jar!/" />
+      <root url="jar://$PROJECT_DIR$/stress-test/slf4j-jdk-platform-logging-2.0.9.jar!/" />
+      <root url="jar://$PROJECT_DIR$/stress-test/logback-classic-1.4.9.jar!/" />
+      <root url="jar://$PROJECT_DIR$/stress-test/logback-core-1.4.9.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES>
+      <root url="jar://$PROJECT_DIR$/../.ideaLibSources/logback-classic-1.4.9-sources.jar!/" />
+      <root url="jar://$PROJECT_DIR$/../.ideaLibSources/logback-core-1.4.9-sources.jar!/" />
+      <root url="jar://$PROJECT_DIR$/../.ideaLibSources/slf4j-jdk-platform-logging-2.0.9-sources.jar!/" />
+      <root url="jar://$PROJECT_DIR$/../.ideaLibSources/slf4j-api-2.0.9-sources.jar!/" />
+    </SOURCES>
+  </library>
+</component>

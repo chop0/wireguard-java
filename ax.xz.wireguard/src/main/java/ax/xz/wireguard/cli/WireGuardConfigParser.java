@@ -1,6 +1,7 @@
 package ax.xz.wireguard.cli;
 
-import ax.xz.wireguard.device.peer.Peer;
+import ax.xz.wireguard.device.peer.PeerConnectionInfo;
+import ax.xz.wireguard.noise.crypto.PeerHandshakeDetails;
 import ax.xz.wireguard.util.IPFilter;
 import ax.xz.wireguard.util.IPUtils;
 import ax.xz.wireguard.noise.keys.NoisePresharedKey;
@@ -15,7 +16,7 @@ public class WireGuardConfigParser {
 	public static WireguardConfig parseConfig(String configContent) throws UnknownHostException {
 		Scanner scanner = new Scanner(configContent);
 		InterfaceConfig interfaceConfig = null;
-		List<Peer.PeerConnectionInfo> peers = new ArrayList<>();
+		List<PeerConnectionInfo> peers = new ArrayList<>();
 
 		var sections = new ArrayList<String>();
 		var currentSection = new StringBuilder();
@@ -39,7 +40,7 @@ public class WireGuardConfigParser {
 			if (firstLine.equals("[Interface]"))
 				interfaceConfig = parseInterfaceConfig(new Scanner(section));
 			else if (firstLine.equals("[Peer]"))
-				peers.add(parsePeerConfig(new Scanner(section)));
+				peers.add(parsePeerConfig(new Scanner(section), interfaceConfig.privateKey));
 		}
 
 		if (interfaceConfig == null) {
@@ -97,7 +98,7 @@ public class WireGuardConfigParser {
 		return new InterfaceConfig(addresses, NoisePrivateKey.fromBase64(privateKey), listenPort);
 	}
 
-	private static Peer.PeerConnectionInfo parsePeerConfig(Scanner scanner) throws UnknownHostException {
+	private static PeerConnectionInfo parsePeerConfig(Scanner scanner, NoisePrivateKey localIdentity) throws UnknownHostException {
 		String publicKey = null;
 		String presharedKey = null;
 		Set<Map.Entry<InetAddress, Integer>> allowedIPs = new HashSet<>();
@@ -151,9 +152,8 @@ public class WireGuardConfigParser {
 			filter.insert(entry.getKey(), entry.getValue());
 		}
 
-		return new Peer.PeerConnectionInfo(
-			NoisePublicKey.fromBase64(publicKey),
-			presharedKey == null ? NoisePresharedKey.zero() : NoisePresharedKey.fromBase64(presharedKey),
+		return new PeerConnectionInfo(
+			new PeerHandshakeDetails(localIdentity, NoisePublicKey.fromBase64(publicKey), presharedKey == null ? NoisePresharedKey.zero() : NoisePresharedKey.fromBase64(presharedKey)),
 			endpoint,
 			persistentKeepAlive == null ? Duration.ofDays(1_000_000_000) : persistentKeepAlive,
 			filter
@@ -184,6 +184,6 @@ public class WireGuardConfigParser {
 		return new InetSocketAddress(InetAddress.getByName(host), port);
 	}
 
-	public record WireguardConfig(InterfaceConfig interfaceConfig, List<Peer.PeerConnectionInfo> peers) {}
+	public record WireguardConfig(InterfaceConfig interfaceConfig, List<PeerConnectionInfo> peers) {}
 	public record InterfaceConfig(Set<Map.Entry<InetAddress, InetAddress>> addressWithMask, NoisePrivateKey privateKey, Integer listenPort) {}
 }

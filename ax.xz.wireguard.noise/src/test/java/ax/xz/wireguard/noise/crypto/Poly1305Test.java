@@ -51,7 +51,7 @@ public class Poly1305Test {
 		var text = "Cryptographic Forum Research Group";
 		byte[] expectedTag = {(byte) 0xa8, (byte) 0x06, (byte) 0x1d, (byte) 0xc1, (byte) 0x30, (byte) 0x51, (byte) 0x36, (byte) 0xc6, (byte) 0xc2, (byte) 0x2b, (byte) 0x8b, (byte) 0xaf, (byte) 0x0c, (byte) 0x01, (byte) 0x27, (byte) 0xa9};
 
-		var poly1305 = new Poly1305();
+		var poly1305 = new NativePoly1305();
 
 		poly1305.init(MemorySegment.ofArray(TEST_KEY));
 		poly1305.update(MemorySegment.ofArray(text.getBytes()));
@@ -79,12 +79,12 @@ public class Poly1305Test {
 		var outbb = ByteBuffer.allocateDirect( 16);
 
 		try (var arena = Arena.ofConfined()) {
-			var context = arena.allocate(Poly1305.POLY1305_CONTEXT);
+			var context = arena.allocate(NativePoly1305.POLY1305_CONTEXT);
 			var start = Instant.now();
 			for (int i = 0; i < 1_000_000; i++) {
 				plaintextbb.position(0);
 				keybb.position(0);
-				var poly1305 = new Poly1305(context);
+				var poly1305 = new NativePoly1305(context);
 				poly1305.init(MemorySegment.ofBuffer(keybb));
 				poly1305.update(MemorySegment.ofBuffer(plaintextbb));
 				poly1305.finish(MemorySegment.ofBuffer(outbb));

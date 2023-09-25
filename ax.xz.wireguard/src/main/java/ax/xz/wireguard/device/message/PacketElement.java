@@ -6,6 +6,7 @@ import ax.xz.wireguard.device.message.response.IncomingResponse;
 import ax.xz.wireguard.device.message.response.ResponsePacket;
 import ax.xz.wireguard.device.message.transport.TransportPacket;
 import ax.xz.wireguard.device.message.transport.incoming.UndecryptedIncomingTransport;
+import ax.xz.wireguard.noise.keys.NoisePrivateKey;
 import ax.xz.wireguard.noise.keys.NoisePublicKey;
 
 import javax.crypto.BadPaddingException;
@@ -25,6 +26,8 @@ public class PacketElement implements AutoCloseable {
 
 	private final MemorySegment backing;
 	private boolean spoilt = false; // becomes true when this element's backing buffer is consumed by a subclass or returned to the pool
+
+//	private final Exception creationStack = new Exception();
 
 	private PacketElement(MemorySegment backing, Consumer<PacketElement> cleanup) {
 		this.backing = backing;
@@ -77,6 +80,11 @@ public class PacketElement implements AutoCloseable {
 		public static Uninitialised ofMoved(PacketElement old) {
 			return new Uninitialised(old.moveBacking(), old.cleanup);
 		}
+
+		@Override
+		protected void finalize() throws Throwable {
+
+		}
 	}
 
 	/**
@@ -95,7 +103,7 @@ public class PacketElement implements AutoCloseable {
 		 * @param initialiser the consumer that initialises the packet and returns the length of the packet
 		 * @return the parsed packet
 		 */
-		public IncomingPeerPacket initialise(Receiver initialiser, NoisePublicKey localPublicKey) throws IOException, BadPaddingException {
+		public IncomingPeerPacket initialise(Receiver initialiser, NoisePrivateKey localIdentity) throws IOException, BadPaddingException {
 			if (initialised) {
 				throw new IllegalStateException("Packet already initialised");
 			}
@@ -106,8 +114,8 @@ public class PacketElement implements AutoCloseable {
 
 			var type = backing().get(JAVA_BYTE, 0);
 			return switch (type) {
-				case InitiationPacket.TYPE -> new IncomingInitiation(this, localPublicKey, address);
-				case ResponsePacket.TYPE -> new IncomingResponse(this, localPublicKey, address);
+				case InitiationPacket.TYPE -> new IncomingInitiation(this, localIdentity, address);
+				case ResponsePacket.TYPE -> new IncomingResponse(this, localIdentity.publicKey(), address);
 				case TransportPacket.TYPE -> new UndecryptedIncomingTransport(this, packetLength, address);
 				default -> throw new IllegalArgumentException("Invalid message type (%02x)".formatted(type));
 			};
@@ -118,4 +126,12 @@ public class PacketElement implements AutoCloseable {
 		}
 	}
 
+	@Override
+	protected void finalize() throws Throwable {
+		super.finalize();
+		if (!spoilt) {
+			System.err.println("PacketElement not closed:");
+//			creationStack.printStackTrace();
+		}
+	}
 }

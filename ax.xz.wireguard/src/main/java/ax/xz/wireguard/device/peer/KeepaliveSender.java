@@ -18,11 +18,11 @@ class KeepaliveSender implements Runnable {
 	private static final MemorySegment keepalivePacket = MemorySegment.ofBuffer(ByteBuffer.allocateDirect(0));
 
 	private final SessionManager sessionManager;
-	private final TransportManager transportManager;
+	private final PeerTransportManager peerTransportManager;
 
-	KeepaliveSender(SessionManager sessionManager, TransportManager transportManager) {
+	KeepaliveSender(SessionManager sessionManager, PeerTransportManager peerTransportManager) {
 		this.sessionManager = sessionManager;
-		this.transportManager = transportManager;
+		this.peerTransportManager = peerTransportManager;
 
 	}
 
@@ -36,7 +36,7 @@ class KeepaliveSender implements Runnable {
 			while (!Thread.interrupted()) {
 				var session = sessionManager.tryGetSessionNow();
 				if (previousKeepalive.needsKeepalive(session)) {
-					transportManager.sendOutgoingTransportNow(keepalivePacket);
+					peerTransportManager.sendOutgoingTransportNow(keepalivePacket);
 					previousKeepalive = KeepaliveRecord.of(session);
 				}
 

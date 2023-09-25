@@ -2,11 +2,9 @@ package ax.xz.wireguard.cli;
 
 import ax.xz.raw.spi.Tun;
 import ax.xz.raw.spi.TunProvider;
-import ax.xz.wireguard.device.TunnelDeviceBond;
 import ax.xz.wireguard.device.WireguardDevice;
 
 import java.io.IOException;
-import java.lang.reflect.InvocationTargetException;
 import java.net.InetSocketAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -37,11 +35,11 @@ public class WireguardTunnelCLI {
 		}
 
 		try (
-			var device = new WireguardDevice(config.interfaceConfig().privateKey());
-			var tun = TunProvider.getProvider().open()
+			var tun = TunProvider.getProvider().open();
+			var device = new WireguardDevice(config.interfaceConfig().privateKey(), tun);
 		) {
 			logger.log(DEBUG, "Opened tun device {0}", tun.toString());
-			tun.setMTU(1500);
+			tun.setMTU(2000);
 
 			if (config.interfaceConfig().listenPort() != null)
 				device.bind(new InetSocketAddress(config.interfaceConfig().listenPort()));
@@ -54,8 +52,7 @@ public class WireguardTunnelCLI {
 				device.addPeer(peer);
 			}
 
-			var coupling = new TunnelDeviceBond(device, tun);
-			coupling.run();
+			device.run();
 		}
 	}
 }
