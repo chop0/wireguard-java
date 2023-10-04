@@ -55,7 +55,7 @@ services:
             - -agentpath:/libasyncProfiler.so=start,event=wall,cpu,alloc,file=/profiling/profile-client.jfr,interval=1000000,timeout=20
     wireguard-client-iperf3:
         image: networkstatic/iperf3
-        command: -c iperf3-server -t 120 -P 16
+        command: -c iperf3-server -t 120 -P 1 -u -b 1G
         network_mode: "service:wireguard-client"
         depends_on:
             - wireguard-client

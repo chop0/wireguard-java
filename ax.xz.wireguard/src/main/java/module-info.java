@@ -9,4 +9,6 @@ module ax.xz.wireguard {
 
 	requires ax.xz.wireguard.noise;
 	requires jsr305;
+
+	uses ax.xz.wireguard.spi.WireguardRouterProvider;
 }

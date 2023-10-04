@@ -4,7 +4,7 @@ import ax.xz.raw.spi.Tun;
 import ax.xz.wireguard.device.message.transport.incoming.DecryptedIncomingTransport;
 import ax.xz.wireguard.device.message.tunnel.IncomingTunnelPacket;
 import ax.xz.wireguard.device.message.tunnel.UninitialisedIncomingTunnelPacket;
-import ax.xz.wireguard.util.Pool;
+import ax.xz.wireguard.util.SharedPool;
 import ax.xz.wireguard.util.ReferenceCounted;
 
 import java.io.IOException;
@@ -12,20 +12,23 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
 
-public class TunPacketRouter implements Runnable {
-	private final Pool pool;
+public class TunPacketRouter implements AutoCloseable {
+	private final SharedPool pool;
 
 	private final Tun tun;
 
 	private final Set<TunPacketChannel> associatedChannels = ConcurrentHashMap.newKeySet();
 
-	public TunPacketRouter(Pool pool, Tun tun) {
+	private final Thread thread;
+
+	public TunPacketRouter(SharedPool pool, Tun tun) {
 		this.pool = pool;
 		this.tun = tun;
+
+		this.thread = new Thread(this::run, "TunPacketRouter");
 	}
 
-	@Override
-	public void run() {
+	private void run() {
 		while (!Thread.interrupted()) {
 			var buffer = new UninitialisedIncomingTunnelPacket(pool.acquire());
 
@@ -44,6 +47,12 @@ public class TunPacketRouter implements Runnable {
 		var channel = new TunPacketChannel();
 		associatedChannels.add(channel);
 		return channel;
+	}
+
+	@Override
+	public void close() throws InterruptedException {
+		thread.interrupt();
+		thread.join();
 	}
 
 	public class TunPacketChannel implements AutoCloseable {
