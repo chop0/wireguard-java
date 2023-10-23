@@ -22,13 +22,6 @@ COPY --from=openjdk:21-slim /usr/local/openjdk-21/include /usr/local/openjdk-21/
 RUN JAVA_HOME=/usr/local/openjdk-21 cmake -DCMAKE_C_FLAGS="-nostdlib -l:libc.a" -GNinja .
 RUN ninja -j$(nproc) libpoly1305-donna.so libposix_raw.so libchacha.so
 
-FROM alpine:3.18.3 as build-bpf
-RUN --mount=type=cache,target=/var/cache/apk apk update && apk add clang
-
-COPY ./ax.xz.wireguard.iptables/src/main/c/ /build/ax.xz.wireguard.iptables/src/main/c/
-WORKDIR /build
-RUN clang -O2 -target bpf -c ax.xz.wireguard.iptables/src/main/c/ax.xz.wireguard.iptables.c -o ax.xz.wireguard.iptables.o
-
 FROM openjdk:21-slim as profiler-build
 RUN apt update && apt install -y cmake make gcc g++ git
 RUN git clone https://github.com/async-profiler/async-profiler /src
@@ -36,7 +29,7 @@ RUN cd /src && make -j$(nproc)
 RUN mkdir /out && cp /src/build/lib/* /out/ && cp /src/build/bin/* /out/
 
 FROM openjdk:21-slim as runtime
-RUN apt update && apt install -y iproute2 iptables iperf3 wget bpftool
+RUN apt update && apt install -y iproute2 iptables iperf3 wget
 
 WORKDIR /app
 
@@ -56,13 +49,6 @@ COPY --from=build-native /build/libposix_raw.so .
 COPY --from=build-native /build/libpoly1305-donna.so .
 COPY --from=build-native /build/libchacha.so .
 COPY --from=profiler-build /out/libasyncProfiler.so /libasyncProfiler.so
-
-COPY --from=build-bpf /build/ax.xz.wireguard.iptables.o /ax.xz.wireguard.iptables.o
-RUN bpftool prog load /ax.xz.wireguard.iptables.o /sys/fs/bpf/ax.xz.wireguard.iptables
-RUN mkdir /var/run/bpffs && mount -t bpf none /var/run/bpffs
-RUN bpftool map pin name wireguard_ports /var/run/bpffs/wireguard_ports
-RUN bpftool map pin name fallback_socket /var/run/bpffs/fallback_socket
-RUN bpftool map pin name wireguard_channels /var/run/bpffs/wireguard_channels
 
 COPY ./run.sh /app/run.sh
 ENTRYPOINT ["/app/run.sh", "-cp", "/app:/usr/share/java/logback-core-1.4.9.jar:/usr/share/java/logback-classic-1.4.9.jar:/usr/share/java/slf4j-jdk-platform-logging-2.0.9.jar:/usr/share/java/slf4j-api-2.0.9.jar"]

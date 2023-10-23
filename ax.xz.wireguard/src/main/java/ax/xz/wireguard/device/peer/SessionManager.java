@@ -1,5 +1,6 @@
 package ax.xz.wireguard.device.peer;
 
+import ax.xz.wireguard.device.PeerRoutingList;
 import ax.xz.wireguard.device.message.initiation.IncomingInitiation;
 import ax.xz.wireguard.device.message.initiation.OutgoingInitiation;
 import ax.xz.wireguard.device.message.response.IncomingResponse;
@@ -212,6 +213,7 @@ final class SessionManager implements Runnable {
 			int localIndex = shuffleIndex();
 			var packet = new OutgoingResponse(
 				pool.acquire(),
+				initiation.originAddress(),
 
 				localIndex,
 				initiation.senderIndex(),
@@ -245,6 +247,6 @@ final class SessionManager implements Runnable {
 	}
 
 	private int shuffleIndex() {
-		return router.shuffleIndex(connectionInfo.handshakeDetails().remoteKey());
+		return router.routingList().shuffle(connectionInfo.handshakeDetails().remoteKey());
 	}
 }

@@ -5,7 +5,6 @@ import ax.xz.wireguard.noise.crypto.Blake2s;
 import ax.xz.wireguard.noise.crypto.Crypto;
 import ax.xz.wireguard.noise.keys.NoisePublicKey;
 
-import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.StructLayout;
 import java.lang.invoke.MethodHandle;
@@ -31,7 +30,7 @@ import static java.lang.foreign.ValueLayout.JAVA_INT;
  * }
  */
 public abstract sealed class InitiationPacket extends PacketElement permits IncomingInitiation, OutgoingInitiation {
-	public static final byte 	TYPE = 1;
+	public static final byte TYPE = 1;
 	static final StructLayout HEADER_LAYOUT = structLayout(
 		JAVA_BYTE.withName("message_type"),
 		paddingLayout(3),
