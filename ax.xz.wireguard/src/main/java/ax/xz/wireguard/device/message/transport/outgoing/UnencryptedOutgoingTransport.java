@@ -2,11 +2,8 @@ package ax.xz.wireguard.device.message.transport.outgoing;
 
 import ax.xz.wireguard.device.message.transport.TransportPacket;
 
-import javax.annotation.WillClose;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-import java.net.InetSocketAddress;
-import java.util.function.Consumer;
 import java.util.function.Function;
 
 public final class UnencryptedOutgoingTransport extends TransportPacket {

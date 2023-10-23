@@ -10,7 +10,6 @@ import ax.xz.wireguard.util.SharedPool;
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.time.Duration;
 
 import static java.lang.System.Logger;
 import static java.lang.System.Logger.Level.DEBUG;
@@ -21,9 +20,6 @@ public final class WireguardDevice implements Closeable {
 	private final NoisePrivateKey staticIdentity;
 
 	private final PeerManager peerManager;
-	private final UnmatchedPacketHandler fallbackHandler;
-
-	private final PeerRoutingList routingList;
 
 	private final WireguardRouter peerRouter;
 	private final TunPacketRouter tunRouter;
@@ -32,15 +28,13 @@ public final class WireguardDevice implements Closeable {
 
 	public WireguardDevice(NoisePrivateKey staticIdentity, Tun tun) {
 		this.staticIdentity = staticIdentity;
-		this.routingList = new PeerRoutingList();
 
 		this.tunRouter = new TunPacketRouter(bufferPool, tun);
-		this.peerRouter = WireguardRouterProvider.provider().create(routingList);
+		this.peerRouter = WireguardRouterProvider.provider().create();
 
 		this.peerManager = new PeerManager(staticIdentity, peerRouter, tunRouter);
-		this.fallbackHandler = new UnmatchedPacketHandler(peerManager, routingList);
 
-		peerRouter.configureFallbackHandler(fallbackHandler);
+		peerRouter.configureInitiationHandler(i -> peerManager.getOrAdd(i.remotePublicKey()).handleAsync(i));
 	}
 
 	public void close() {

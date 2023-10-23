@@ -4,6 +4,7 @@ import ax.xz.wireguard.device.message.PacketElement;
 import ax.xz.wireguard.noise.crypto.Blake2s;
 import ax.xz.wireguard.noise.keys.NoisePublicKey;
 
+import java.lang.foreign.Linker;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.StructLayout;
 import java.lang.invoke.MethodHandle;

@@ -7,11 +7,9 @@ import java.lang.foreign.MemorySegment;
 import java.net.InetSocketAddress;
 
 public final class OutgoingResponse extends ResponsePacket implements OutgoingPeerPacket {
-	private final InetSocketAddress destination;
 
-	public OutgoingResponse(Uninitialised data, InetSocketAddress destination, int senderIndex, int receiverIndex, NoisePublicKey ephemeral, byte[] encryptedNothing, NoisePublicKey initiatorKey) {
+	public OutgoingResponse(Uninitialised data, int senderIndex, int receiverIndex, NoisePublicKey ephemeral, byte[] encryptedNothing, NoisePublicKey initiatorKey) {
 		super(data);
-		this.destination = destination;
 
 		ResponsePacket.MESSAGE_TYPE.set(header, ResponsePacket.TYPE);
 		ResponsePacket.SENDER_INDEX.set(header, senderIndex);

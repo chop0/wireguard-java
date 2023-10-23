@@ -7,8 +7,10 @@ import ax.xz.wireguard.device.message.response.IncomingResponse;
 import ax.xz.wireguard.device.message.transport.TransportPacket;
 import ax.xz.wireguard.device.message.transport.incoming.UndecryptedIncomingTransport;
 import ax.xz.wireguard.noise.keys.NoisePublicKey;
+import ax.xz.wireguard.spi.PeerChannel;
 import ax.xz.wireguard.spi.WireguardRouter;
 
+import java.io.IOException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -32,7 +34,12 @@ public class Peer implements AutoCloseable {
 	public Peer(TunPacketRouter.TunPacketChannel tunChannel, WireguardRouter router, PeerConnectionInfo pci) {
 		this.pci = pci;
 
-		var transportChannel = router.openChannel(pci.handshakeDetails().remoteKey(), TransportPacket.TYPE);
+		PeerChannel transportChannel = null;
+		try {
+			transportChannel = router.openChannel(pci.handshakeDetails().remoteKey(), TransportPacket.TYPE);
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
 
 		this.sessionManager = new SessionManager(pci, router, transportChannel);
 		this.transportManager = new PeerTransportManager(sessionManager, pci.handshakeDetails().localIdentity(), pci.filter(), transportChannel, tunChannel);
