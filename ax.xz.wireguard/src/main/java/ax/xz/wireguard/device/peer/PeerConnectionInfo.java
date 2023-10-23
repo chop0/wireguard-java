@@ -35,7 +35,7 @@ public record PeerConnectionInfo(
 		);
 	}
 
-	public boolean hasEndpoint() {
+	public boolean canInitiateHandshake() {
 		return endpoint != null;
 	}
 

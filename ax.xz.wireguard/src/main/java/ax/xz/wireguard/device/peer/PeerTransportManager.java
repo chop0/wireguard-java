@@ -1,23 +1,20 @@
 package ax.xz.wireguard.device.peer;
 
+import ax.xz.wireguard.device.PeerPacketRouter;
 import ax.xz.wireguard.device.TunPacketRouter;
-import ax.xz.wireguard.device.message.PacketElement;
 import ax.xz.wireguard.device.message.transport.incoming.DecryptedIncomingTransport;
 import ax.xz.wireguard.device.message.transport.incoming.UndecryptedIncomingTransport;
 import ax.xz.wireguard.device.message.transport.outgoing.EncryptedOutgoingTransport;
 import ax.xz.wireguard.device.message.transport.outgoing.UnencryptedOutgoingTransport;
-import ax.xz.wireguard.noise.keys.NoisePrivateKey;
-import ax.xz.wireguard.spi.PeerChannel;
-import ax.xz.wireguard.util.IPFilter;
-import ax.xz.wireguard.util.OrderedParallelProcessor;
-import ax.xz.wireguard.util.PersistentTaskExecutor;
-import ax.xz.wireguard.util.ThreadLocalPool;
+import ax.xz.wireguard.device.message.tunnel.IncomingTunnelPacket;
+import ax.xz.wireguard.util.Pool;
+import ax.xz.wireguard.util.ReferenceCounted;
 
 import javax.annotation.WillClose;
 import javax.crypto.BadPaddingException;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
-import java.util.function.Function;
+import java.util.concurrent.ForkJoinPool;
 
 import static java.lang.System.Logger.Level.DEBUG;
 import static java.lang.System.Logger.Level.WARNING;
@@ -42,76 +39,97 @@ import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 class PeerTransportManager implements Runnable {
 	private static final System.Logger logger = System.getLogger(PeerTransportManager.class.getName());
 
-	private final OrderedParallelProcessor encryptionProcessor = new OrderedParallelProcessor();
-	private final OrderedParallelProcessor decryptionProcessor = new OrderedParallelProcessor();
-
-	private final SessionManager sessionManager;
-
-	private final IPFilter packetFilter;
-	private final NoisePrivateKey localIdentity;
-
-	private final PeerChannel transportChannel;
+	private final OrderedCryptographicExecutor<DecryptionTask, DecryptedIncomingTransport> decryptionProcessor = new OrderedCryptographicExecutor<>(ForkJoinPool.getCommonPoolParallelism(), DecryptionTask::decrypt, (error, task) -> {
+		logger.log(WARNING, "Failed to decrypt transport message", error);
+		task.transport().close();
+	});
+	private final Pool pool;
+	private final PeerPacketRouter.PeerPacketChannel peerChannel;
 	private final TunPacketRouter.TunPacketChannel tunChannel;
+	private final PeerConnectionInfo connectionInfo;
+	private final SessionManager sessionManager;
+	private final OrderedCryptographicExecutor<ReferenceCounted<IncomingTunnelPacket>, EncryptedOutgoingTransport> encryptionProcessor = new OrderedCryptographicExecutor<>(ForkJoinPool.getCommonPoolParallelism(), this::encrypt, (error, transport) -> {
+//		logger.log(WARNING, "Failed to encrypt transport message", error);
+	});
 
-	PeerTransportManager(SessionManager sessionManager, NoisePrivateKey localIdentity, IPFilter packetFilter, PeerChannel transportChannel, TunPacketRouter.TunPacketChannel tunChannel) {
-		this.transportChannel = transportChannel;
+	PeerTransportManager(Pool pool, PeerPacketRouter.PeerPacketChannel peerChannel, TunPacketRouter.TunPacketChannel tunChannel, PeerConnectionInfo connectionInfo, SessionManager sessionManager) {
+		this.pool = pool;
+		this.peerChannel = peerChannel;
 		this.tunChannel = tunChannel;
-
+		this.connectionInfo = connectionInfo;
 		this.sessionManager = sessionManager;
-		this.packetFilter = packetFilter;
-		this.localIdentity = localIdentity;
 	}
 
 	public void run() {
-		try (var executor = new PersistentTaskExecutor<>(Function.identity(), logger, Thread.ofPlatform().factory())) {
-			executor.submit("Transport manager:  incoming transport receiver", () -> {
-				try (var pool = ThreadLocalPool.of(10)) {
-					while (!Thread.interrupted()) {
-						var transport = tunChannel.take();
-						try (transport) {
-							sendOutgoingTransport(pool, transport.get().packet());
-						}
-					}
+		var incomingPacketReceiver = new Thread(() -> {
+			try {
+				while (!Thread.interrupted()) {
+					var transport = tunChannel.take();
+					sendOutgoingTransport(transport);
 				}
-			});
+			} catch (InterruptedException e) {
+				logger.log(DEBUG, "Transport manager interrupted", e);
+				Thread.currentThread().interrupt();
+			} catch (Exception e) {
+				logger.log(WARNING, "Transport manager failed", e);
+			}
+		}, "Transport manager:  incoming transport receiver");
 
-			executor.submit("Transport manager:  incoming transport receiver", () -> {
-				try (var pool = ThreadLocalPool.of(10)) {
-					while (!Thread.interrupted()) {
-						var buffer = new PacketElement.UnparsedIncomingPeerPacket(pool.acquire());
-
-						try {
-							var transport = buffer.initialise(transportChannel::receive, localIdentity);
-							handleIncomingTransport((UndecryptedIncomingTransport) transport);
-						} catch (BadPaddingException e) {
-							buffer.close();
-							logger.log(WARNING, "Failed to decrypt transport packet", e);
-						} catch (Throwable e) {
-							buffer.close();
-							throw e;
-						}
-					}
+		var incomingTransportReceiver = new Thread(() -> {
+			try {
+				while (!Thread.interrupted()) {
+					var transport = peerChannel.takeTransport();
+					handleIncomingTransport(transport);
 				}
-			});
-		}
-	}
+			} catch (InterruptedException e) {
+				logger.log(DEBUG, "Transport manager interrupted", e);
+				Thread.currentThread().interrupt();
+			} catch (Exception e) {
+				logger.log(WARNING, "Transport manager failed", e);
+			}
+		}, "Transport manager:  incoming transport receiver");
 
-	/**
-	 * Sends the given transport data to the peer immediately.
-	 *
-	 * @param plaintext data to send
-	 */
-	public void sendOutgoingTransport(ThreadLocalPool pool, MemorySegment plaintext) throws InterruptedException {
-		// get the session as close to the send as possible
-		var session = sessionManager.tryGetSessionNow();
-		if (session == null)
-			return;
+		var encryptedProcessor = new Thread(() -> {
+			try {
+				while (!Thread.interrupted()) {
+					var task = encryptionProcessor.dequeue();
+					processEncryptedTransport(task);
+				}
+			} catch (InterruptedException e) {
+				logger.log(DEBUG, "Transport manager interrupted", e);
+				Thread.currentThread().interrupt();
+			} catch (Exception e) {
+				logger.log(WARNING, "Transport manager failed", e);
+			}
+		}, "Transport manager:  encryption processor");
 
-		var packet = new UnencryptedOutgoingTransport(pool.acquire(), plaintext.byteSize() + 16, session.getRemoteIndex());
+		var decryptedProcessor = new Thread(() -> {
+			try {
+				while (!Thread.interrupted()) {
+					var task = decryptionProcessor.dequeue();
+					processDecryptedTransport(task);
+				}
+			} catch (InterruptedException e) {
+				logger.log(DEBUG, "Transport manager interrupted", e);
+				Thread.currentThread().interrupt();
+			} catch (Exception e) {
+				logger.log(WARNING, "Transport manager failed", e);
+			}
+		}, "Transport manager:  decryption processor");
 
-		try (var guard = encryptionProcessor.register()) {
-			var outgoing = packet.fillCiphertext(ciphertext -> session.cipher(plaintext, ciphertext));
-			encryptionProcessor.markCompleteAndRunOrdered(guard, () -> processEncryptedTransport(outgoing));
+		incomingPacketReceiver.start();
+		incomingTransportReceiver.start();
+		encryptedProcessor.start();
+		decryptedProcessor.start();
+
+		try {
+			incomingPacketReceiver.join();
+			incomingTransportReceiver.join();
+			encryptedProcessor.join();
+			decryptedProcessor.join();
+		} catch (InterruptedException e) {
+			logger.log(DEBUG, "Transport manager interrupted", e);
+			Thread.currentThread().interrupt();
 		}
 	}
 
@@ -121,24 +139,18 @@ class PeerTransportManager implements Runnable {
 	 *
 	 * @param ciphertextMessage the message to decrypt and send up the network stack
 	 */
-	public void handleIncomingTransport(@WillClose UndecryptedIncomingTransport ciphertextMessage) {
+	void handleIncomingTransport(@WillClose UndecryptedIncomingTransport ciphertextMessage) {
 		// no use waiting for a session, since if the session is not established, we will not be able to decrypt the message
 		// because any sessions created in the future will have a different keypair
-		try {
-			var currentSession = sessionManager.tryGetSessionNow();
-			if (currentSession == null) {
-				ciphertextMessage.close();
-				return;
-			}
+		var currentSession = sessionManager.tryGetSessionNow();
+		if (currentSession == null) {
+			ciphertextMessage.close();
+			return;
+		}
 
-			try (ciphertextMessage; var guard = decryptionProcessor.register()) {
-				var result = ciphertextMessage.decrypt(currentSession::decryptTransportPacket);
-				decryptionProcessor.markCompleteAndRunOrdered(guard, () -> processDecryptedTransport(result));
-			}
-		} catch (BadPaddingException e) {
-			logger.log(WARNING, "Failed to decrypt transport packet", e);
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
+		if (!decryptionProcessor.enqueue(new DecryptionTask(currentSession, ciphertextMessage))) {
+			logger.log(DEBUG, "Dropped packet because decryption processor is full");
+			ciphertextMessage.close();
 		}
 	}
 
@@ -151,7 +163,7 @@ class PeerTransportManager implements Runnable {
 		}
 
 		try (transport) {
-			transportChannel.send(transport.transmissiblePacket().asByteBuffer()); // TODO:  we should use the same session that was used to encrypt it
+			peerChannel.send(transport); // TODO:  we should use the same session that was used to encrypt it
 		} catch (IOException e) {
 			logger.log(WARNING, "Failed to write packet to peer", e);
 		}
@@ -160,13 +172,13 @@ class PeerTransportManager implements Runnable {
 	/**
 	 * Processes an inbound plaintext message
 	 */
-	private void processDecryptedTransport(DecryptedIncomingTransport transport) {
+	private void processDecryptedTransport(DecryptedIncomingTransport transport) throws InterruptedException {
 		var plaintext = transport.plaintextBuffer();
 
 		try (transport) {
 			if (plaintext.byteSize() == 0) {
 				logger.log(DEBUG, "Received keepalive");
-			} else if (!packetFilter.search(destinationIPOf(plaintext))) {
+			} else if (false && !connectionInfo.filter().search(destinationIPOf(plaintext))) {
 				logger.log(DEBUG, "Dropped packet with destination outside of allowed range");
 			} else {
 				try {
@@ -187,5 +199,53 @@ class PeerTransportManager implements Runnable {
 			case 6 -> packet.asSlice(24, 16);
 			default -> throw new IllegalArgumentException("Unknown IP version");
 		};
+	}
+
+	/**
+	 * Sends the given transport data to the peer immediately.
+	 *
+	 * @param plaintext data to send
+	 */
+	void sendOutgoingTransportNow(MemorySegment plaintext) {
+		// get the session as close to the send as possible
+		var session = sessionManager.tryGetSessionNow();
+		if (session == null)
+			return;
+
+		var packet = new UnencryptedOutgoingTransport(pool.acquire(), plaintext.byteSize() + 16, session.getRemoteIndex());
+
+		var outgoing = packet.fillCiphertext(ciphertext -> session.cipher(plaintext, ciphertext));
+		processEncryptedTransport(outgoing);
+	}
+
+	private EncryptedOutgoingTransport encrypt(ReferenceCounted<IncomingTunnelPacket> guard) {
+		try (guard) {
+			var session = sessionManager.tryGetSessionNow();
+			if (session == null) {
+				throw new IllegalStateException("No session is established");
+			}
+
+			var plaintext = guard.get().packet();
+
+			var packet = new UnencryptedOutgoingTransport(pool.acquire(), plaintext.byteSize() + 16, session.getRemoteIndex());
+			return packet.fillCiphertext(ciphertext -> session.cipher(plaintext, ciphertext));
+		}
+	}
+
+	/**
+	 * Enqueues an outbound transport message to be encrypted and sent to the peer.
+	 */
+	void sendOutgoingTransport(ReferenceCounted<IncomingTunnelPacket> guard) {
+		if (!encryptionProcessor.enqueue(guard)) {
+			logger.log(DEBUG, "Dropped packet because encryption processor is full");
+			guard.close();
+		}
+	}
+
+
+	record DecryptionTask(EstablishedSession session, UndecryptedIncomingTransport transport) {
+		DecryptedIncomingTransport decrypt() throws BadPaddingException {
+			return transport.decrypt(session::decryptTransportPacket);
+		}
 	}
 }

@@ -35,8 +35,8 @@ public class WireguardTunnelCLI {
 		}
 
 		try (
-				var tun = TunProvider.getProvider().open();
-				var device = new WireguardDevice(config.interfaceConfig().privateKey(), tun);
+			var tun = TunProvider.getProvider().open();
+			var device = new WireguardDevice(config.interfaceConfig().privateKey(), tun);
 		) {
 			logger.log(DEBUG, "Opened tun device {0}", tun.toString());
 			tun.setMTU(2000);
@@ -52,7 +52,7 @@ public class WireguardTunnelCLI {
 				device.addPeer(peer);
 			}
 
-			Thread.currentThread().join();
+			device.run();
 		}
 	}
 }

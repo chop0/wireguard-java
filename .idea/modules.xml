@@ -6,7 +6,6 @@
       <module fileurl="file://$PROJECT_DIR$/ax.xz.raw/ax.xz.raw.iml" filepath="$PROJECT_DIR$/ax.xz.raw/ax.xz.raw.iml" />
       <module fileurl="file://$PROJECT_DIR$/ax.xz.raw.posix/ax.xz.raw.posix.iml" filepath="$PROJECT_DIR$/ax.xz.raw.posix/ax.xz.raw.posix.iml" />
       <module fileurl="file://$PROJECT_DIR$/ax.xz.wireguard/ax.xz.wireguard.iml" filepath="$PROJECT_DIR$/ax.xz.wireguard/ax.xz.wireguard.iml" />
-      <module fileurl="file://$PROJECT_DIR$/ax.xz.wireguard.iptables/ax.xz.wireguard.iptables.iml" filepath="$PROJECT_DIR$/ax.xz.wireguard.iptables/ax.xz.wireguard.iptables.iml" />
       <module fileurl="file://$PROJECT_DIR$/ax.xz.wireguard.noise/ax.xz.wireguard.noise.iml" filepath="$PROJECT_DIR$/ax.xz.wireguard.noise/ax.xz.wireguard.noise.iml" />
     </modules>
   </component>

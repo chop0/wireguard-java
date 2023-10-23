@@ -7,22 +7,22 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
-public class SharedPool implements AutoCloseable, PacketBufferPool {
+public class Pool implements AutoCloseable {
 	private static final int TCACHE_SIZE = 7;
 
 	private static final VarHandle POOL_SIZE, NUM_ALLOCATED, NUM_RELEASED;
 
 	static {
 		try {
-			POOL_SIZE = MethodHandles.lookup().findVarHandle(SharedPool.class, "poolSize", int.class);
-			NUM_ALLOCATED = MethodHandles.lookup().findVarHandle(SharedPool.class, "numberAllocated", int.class);
-			NUM_RELEASED = MethodHandles.lookup().findVarHandle(SharedPool.class, "numberReleased", int.class);
+			POOL_SIZE = MethodHandles.lookup().findVarHandle(Pool.class, "poolSize", int.class);
+			NUM_ALLOCATED = MethodHandles.lookup().findVarHandle(Pool.class, "numberAllocated", int.class);
+			NUM_RELEASED = MethodHandles.lookup().findVarHandle(Pool.class, "numberReleased", int.class);
 		} catch (ReflectiveOperationException e) {
 			throw new ExceptionInInitializerError(e);
 		}
 	}
 
-	private static final System.Logger logger = System.getLogger(SharedPool.class.getSimpleName());
+	private static final System.Logger logger = System.getLogger(Pool.class.getSimpleName());
 
 	private final int maxPoolSize;
 
@@ -35,13 +35,9 @@ public class SharedPool implements AutoCloseable, PacketBufferPool {
 	private volatile int numberAllocated = 0;
 	private volatile int numberReleased = 0;
 
-	public SharedPool(int maxPoolSize) {
+	public Pool(int maxPoolSize) {
 		this.maxPoolSize = maxPoolSize;
 		this.pool = new ConcurrentLinkedQueue<>();
-	}
-
-	public static PacketBufferPool of(int maxPoolSize) {
-		return new SharedPool(maxPoolSize);
 	}
 
 	private PacketElement.Uninitialised retrieveTcacheIfAvailable() {

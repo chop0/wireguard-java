@@ -3,57 +3,65 @@ package ax.xz.wireguard.device;
 import ax.xz.raw.spi.Tun;
 import ax.xz.wireguard.device.peer.PeerConnectionInfo;
 import ax.xz.wireguard.noise.keys.NoisePrivateKey;
-import ax.xz.wireguard.spi.WireguardRouter;
-import ax.xz.wireguard.spi.WireguardRouterProvider;
-import ax.xz.wireguard.util.SharedPool;
+import ax.xz.wireguard.noise.keys.NoisePublicKey;
+import ax.xz.wireguard.util.Pool;
 
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.time.Duration;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static java.lang.System.Logger;
 import static java.lang.System.Logger.Level.DEBUG;
 
 public final class WireguardDevice implements Closeable {
+	// for debugging performance, so flamegraphs look nicer
+	public static final boolean SYNCRONOUS_PIPELINE = false;
+
 	private static final Logger log = System.getLogger(WireguardDevice.class.getName());
 
 	private final NoisePrivateKey staticIdentity;
 
 	private final PeerManager peerManager;
-	private final UnmatchedPacketHandler fallbackHandler;
 
-	private final PeerRoutingList routingList;
-
-	private final WireguardRouter peerRouter;
+	private final PeerPacketRouter peerRouter;
 	private final TunPacketRouter tunRouter;
 
-	private final SharedPool bufferPool = new SharedPool(0x500);
+	private final Pool bufferPool = new Pool(0x500);
 
 	public WireguardDevice(NoisePrivateKey staticIdentity, Tun tun) {
 		this.staticIdentity = staticIdentity;
-		this.routingList = new PeerRoutingList();
 
-		this.tunRouter = new TunPacketRouter(bufferPool, tun);
-		this.peerRouter = WireguardRouterProvider.provider().create(routingList);
+		try {
+			this.tunRouter = new TunPacketRouter(bufferPool, tun);
+			this.peerRouter = new PeerPacketRouter(bufferPool, staticIdentity, this::setupChannelDownstream);
+			this.peerManager = new PeerManager(bufferPool, staticIdentity, tunRouter);
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
+	}
 
-		this.peerManager = new PeerManager(staticIdentity, peerRouter, tunRouter);
-		this.fallbackHandler = new UnmatchedPacketHandler(peerManager, routingList);
+	private void setupChannelDownstream(NoisePublicKey noisePublicKey, PeerPacketRouter.PeerPacketChannel channel) {
+		peerManager.setupChannelDownstream(noisePublicKey, channel);
+	}
 
-		peerRouter.configureFallbackHandler(fallbackHandler);
+	public void run() {
+		try (var executor = Executors.newThreadPerTaskExecutor(Thread.ofPlatform().factory())) {
+			executor.submit(peerRouter);
+			executor.submit(tunRouter);
+
+			executor.awaitTermination(999_999_999, TimeUnit.DAYS);
+		} catch (InterruptedException e) {
+			log.log(DEBUG, "Wireguard device interrupted");
+		} finally {
+			close();
+		}
 	}
 
 	public void close() {
-		peerManager.close();
 		bufferPool.close();
-
-		try {
-			peerRouter.close();
-			tunRouter.close();
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new RuntimeException("Could not stop peer router", e);
-		}
+		peerManager.close();
 	}
 
 	public void bind(InetSocketAddress endpoint) throws IOException {
@@ -62,7 +70,8 @@ public final class WireguardDevice implements Closeable {
 	}
 
 	public void addPeer(PeerConnectionInfo pci) {
-		peerManager.startPeer(pci);
+		peerManager.addPeer(pci);
+		peerRouter.maybeCreatePeer(pci.handshakeDetails().remoteKey());
 	}
 
 	@Override

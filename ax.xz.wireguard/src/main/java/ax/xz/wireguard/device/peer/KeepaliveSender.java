@@ -1,7 +1,5 @@
 package ax.xz.wireguard.device.peer;
 
-import ax.xz.wireguard.util.ThreadLocalPool;
-
 import javax.annotation.Nullable;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
@@ -34,11 +32,11 @@ class KeepaliveSender implements Runnable {
 	public void run() {
 		sessionManager.lock.lock();
 
-		try (var tlp = new ThreadLocalPool(2)) {
+		try {
 			while (!Thread.interrupted()) {
 				var session = sessionManager.tryGetSessionNow();
 				if (previousKeepalive.needsKeepalive(session)) {
-					peerTransportManager.sendOutgoingTransport(tlp, keepalivePacket);
+					peerTransportManager.sendOutgoingTransportNow(keepalivePacket);
 					previousKeepalive = KeepaliveRecord.of(session);
 				}
 
