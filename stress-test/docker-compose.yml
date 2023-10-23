@@ -21,14 +21,13 @@ services:
         devices:
             - /dev/net/tun:/dev/net/tun
         command:
-            - -agentpath:/libasyncProfiler.so=start,event=wall,cpu,alloc,file=/profiling/profile-server.jfr,interval=1000000,timeout=20
+            - -agentpath:/libasyncProfiler.so=start,alluser,event=cpu,file=/profiling/profile-server.jfr,interval=10000000,timeout=60
 
     iperf3-server:
         image: networkstatic/iperf3
         command: -s
         depends_on:
             - wireguard-server
-            - wireguard-client
         networks:
             - wireguard-network
 
@@ -52,7 +51,7 @@ services:
         devices:
             - /dev/net/tun:/dev/net/tun
         command:
-            - -agentpath:/libasyncProfiler.so=start,event=wall,cpu,alloc,file=/profiling/profile-client.jfr,interval=1000000,timeout=20
+            - -agentpath:/libasyncProfiler.so=start,alluser,event=cpu,file=/profiling/profile-client.jfr,interval=10000000,timeout=60
     wireguard-client-iperf3:
         image: networkstatic/iperf3
         command: -c iperf3-server -t 120 -P 16

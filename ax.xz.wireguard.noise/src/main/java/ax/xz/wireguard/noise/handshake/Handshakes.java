@@ -1,7 +1,6 @@
 package ax.xz.wireguard.noise.handshake;
 
 import ax.xz.wireguard.noise.crypto.Blake2s;
-import ax.xz.wireguard.noise.crypto.PeerHandshakeDetails;
 import ax.xz.wireguard.noise.keys.NoisePresharedKey;
 import ax.xz.wireguard.noise.keys.NoisePrivateKey;
 import ax.xz.wireguard.noise.keys.NoisePublicKey;
@@ -37,12 +36,12 @@ public class Handshakes {
 		INITIAL_HASH = result;
 	}
 
-	public static InitiatorStageOne initiateHandshake(PeerHandshakeDetails handshakeDetails) {
-		return new InitiatorStageOne(handshakeDetails.localIdentity(), handshakeDetails.remoteKey(), handshakeDetails.presharedKey());
+	public static InitiatorStageOne initiateHandshake(NoisePrivateKey localKeypair, NoisePublicKey remotePublicKey, NoisePresharedKey presharedKey) {
+		return new InitiatorStageOne(localKeypair, remotePublicKey, presharedKey);
 	}
 
-	public static ResponderHandshake responderHandshake(PeerHandshakeDetails handshakeDetails, NoisePublicKey remoteEphemeral, byte[] encryptedStatic, byte[] encryptedTimestamp) throws BadPaddingException {
-		return new ResponderHandshake(handshakeDetails.localIdentity(), remoteEphemeral, encryptedStatic, encryptedTimestamp);
+	public static ResponderHandshake responderHandshake(NoisePrivateKey localKeypair, NoisePublicKey remoteEphemeral, byte[] encryptedStatic, byte[] encryptedTimestamp) throws BadPaddingException {
+		return new ResponderHandshake(localKeypair, remoteEphemeral, encryptedStatic, encryptedTimestamp);
 	}
 
 	public static NoisePublicKey decryptRemoteStatic(NoisePrivateKey localKeypair, NoisePublicKey remoteEphemeral, byte[] encryptedStatic, byte[] encryptedTimestamp) throws BadPaddingException {

@@ -3,9 +3,4 @@
   <component name="CompilerConfiguration">
     <bytecodeTargetLevel target="21" />
   </component>
-  <component name="JavacSettings">
-    <option name="ADDITIONAL_OPTIONS_OVERRIDE">
-      <module name="ax.xz.wireguard" options="--add-exports org.slf4j.jdk.platform.logging/org.slf4j.jdk.platform.logging=ax.xz.wireguard" />
-    </option>
-  </component>
 </project>

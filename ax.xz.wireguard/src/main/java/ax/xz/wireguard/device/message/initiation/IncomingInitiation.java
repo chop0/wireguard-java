@@ -1,8 +1,6 @@
 package ax.xz.wireguard.device.message.initiation;
 
 import ax.xz.wireguard.device.message.IncomingPeerPacket;
-import ax.xz.wireguard.noise.handshake.Handshakes;
-import ax.xz.wireguard.noise.keys.NoisePrivateKey;
 import ax.xz.wireguard.noise.keys.NoisePublicKey;
 
 import javax.crypto.BadPaddingException;
@@ -14,9 +12,8 @@ import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 
 public final class IncomingInitiation extends InitiationPacket implements IncomingPeerPacket {
 	private final InetSocketAddress sender;
-	private final NoisePublicKey remotePublicKey;
 
-	public IncomingInitiation(UnparsedIncomingPeerPacket data, NoisePrivateKey localIdentity, InetSocketAddress sender) throws BadPaddingException {
+	public IncomingInitiation(UnparsedIncomingPeerPacket data, NoisePublicKey localPublicKey, InetSocketAddress sender) throws BadPaddingException {
 		super(data);
 		this.sender = sender;
 
@@ -34,23 +31,17 @@ public final class IncomingInitiation extends InitiationPacket implements Incomi
 			throw new Error(e);
 		}
 
-		byte[] mac1Calculated = calculateMac1(localIdentity.publicKey());
+		byte[] mac1Calculated = calculateMac1(localPublicKey);
 		if (!Arrays.equals(mac1, mac1Calculated))
 			throw new BadPaddingException("Invalid MAC1 (expected " + Arrays.toString(mac1Calculated) + " but got " + Arrays.toString(mac1) + ")");
 
 		byte[] mac2Calculated = new byte[16];
 		if (!Arrays.equals(mac2, mac2Calculated))
 			throw new BadPaddingException("Invalid MAC2 (expected " + Arrays.toString(mac2Calculated) + " but got " + Arrays.toString(mac2) + ")");
-
-		this.remotePublicKey = Handshakes.decryptRemoteStatic(localIdentity, ephemeral(), encryptedStatic(), encryptedTimestamp());
 	}
 
 	public InetSocketAddress originAddress() {
 		return sender;
-	}
-
-	public NoisePublicKey remotePublicKey() {
-		return remotePublicKey;
 	}
 
 	@Override

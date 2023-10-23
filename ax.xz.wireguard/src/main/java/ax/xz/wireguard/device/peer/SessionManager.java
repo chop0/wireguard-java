@@ -1,23 +1,27 @@
 package ax.xz.wireguard.device.peer;
 
-import ax.xz.wireguard.device.PeerPacketRouter;
+import ax.xz.wireguard.device.Pool;
+import ax.xz.wireguard.device.WireguardDevice;
+import ax.xz.wireguard.device.message.OutgoingPeerPacket;
 import ax.xz.wireguard.device.message.initiation.IncomingInitiation;
 import ax.xz.wireguard.device.message.initiation.OutgoingInitiation;
 import ax.xz.wireguard.device.message.response.IncomingResponse;
 import ax.xz.wireguard.device.message.response.OutgoingResponse;
 import ax.xz.wireguard.noise.handshake.Handshakes;
+import ax.xz.wireguard.noise.keys.NoisePrivateKey;
 import ax.xz.wireguard.util.PersistentTaskExecutor;
-import ax.xz.wireguard.util.Pool;
 
 import javax.annotation.Nullable;
+import javax.annotation.WillClose;
 import javax.annotation.concurrent.GuardedBy;
 import javax.crypto.BadPaddingException;
 import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.channels.DatagramChannel;
 import java.time.Duration;
-import java.time.Instant;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.StructuredTaskScope;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -40,19 +44,30 @@ final class SessionManager implements Runnable {
 	 */
 	final Condition condition = lock.newCondition();
 
+	private final DatagramChannel channel;
+
+
+	// A queue of inbound handshake response messages [other peer -> this peer]
+	private final BlockingQueue<IncomingResponse> inboundHandshakeResponseQueue = new LinkedBlockingQueue<>();
+
+	// A queue of inbound handshake initiation messages [other peer -> this peer]
+	private final BlockingQueue<IncomingInitiation> inboundHandshakeInitiationQueue = new LinkedBlockingQueue<>();
+
 	// The keys and addresses used to connect to the peer
-	private final PeerConnectionInfo connectionInfo;
+	private final Peer.PeerConnectionInfo connectionInfo;
+	private final NoisePrivateKey localIdentity;
 
 	// The device through which we communicate with the peer
-	private final PeerPacketRouter.PeerPacketChannel channel;
+	private final WireguardDevice device;
 	private final Pool pool;
-
 	// The current session.  Null iff no session is established and a handshake has not begun. This is private by peerLock.
 	private EstablishedSession session;
 
-	SessionManager(Pool pool, PeerPacketRouter.PeerPacketChannel bindChannel, PeerConnectionInfo connectionInfo) {
+	SessionManager(WireguardDevice device, DatagramChannel bidirectionalChannel, Peer.PeerConnectionInfo connectionInfo, NoisePrivateKey localIdentity, Pool pool) {
 		this.connectionInfo = connectionInfo;
-		this.channel = bindChannel;
+		this.channel = bidirectionalChannel;
+		this.device = device;
+		this.localIdentity = localIdentity;
 		this.pool = pool;
 	}
 
@@ -79,7 +94,7 @@ final class SessionManager implements Runnable {
 
 		try {
 			while (!Thread.interrupted()) {
-				if (!isSessionAlive() && connectionInfo.canInitiateHandshake()) for (int i = 0; i < HANDSHAKE_ATTEMPTS; i++) {
+				if (!isSessionAlive() && canInitiateHandshake()) for (int i = 0; i < HANDSHAKE_ATTEMPTS; i++) {
 					logger.log(INFO, "Initiating handshake with {0} (try {1} of {2})", connectionInfo, i + 1, HANDSHAKE_ATTEMPTS);
 
 					if (attemptInitiatorHandshake()) break;
@@ -100,7 +115,7 @@ final class SessionManager implements Runnable {
 
 		try {
 			while (!Thread.interrupted()) {
-				try (var initiation = channel.takeInitiation()) {
+				try (var initiation = inboundHandshakeInitiationQueue.take()) {
 					performHandshakeResponse(initiation);
 				}
 			}
@@ -114,6 +129,12 @@ final class SessionManager implements Runnable {
 	}
 
 	private void cleanup() {
+		try {
+			channel.close();
+		} catch (IOException e) {
+			logger.log(WARNING, "Failed to close channel", e);
+		}
+
 		if (lock.tryLock()) {
 			try {
 				killSession();
@@ -133,6 +154,12 @@ final class SessionManager implements Runnable {
 		return session != null && !session.isExpired();
 	}
 
+	/**
+	 * Returns true if we can initiate a handshake, false otherwise
+	 */
+	private boolean canInitiateHandshake() {
+		return connectionInfo.endpoint() != null;
+	}
 
 	/**
 	 * Attempts to initiate a handshake with the peer.  Returns true if the handshake was successful, false otherwise.
@@ -142,9 +169,9 @@ final class SessionManager implements Runnable {
 	@GuardedBy("lock")
 	private boolean attemptInitiatorHandshake() {
 		try {
-			var handshake = Handshakes.initiateHandshake(connectionInfo.handshakeDetails());
+			var handshake = Handshakes.initiateHandshake(localIdentity, connectionInfo.remoteStatic(), connectionInfo.presharedKey());
 
-			int localIndex = channel.prepareNewSession(connectionInfo.endpoint());
+			int localIndex = allocateNewSessionIndex();
 			var packet = new OutgoingInitiation(
 				pool.acquire(),
 				localIndex,
@@ -153,28 +180,14 @@ final class SessionManager implements Runnable {
 				handshake.getEncryptedStatic(),
 				handshake.getEncryptedTimestamp(),
 
-				connectionInfo.handshakeDetails().remoteKey()
+				connectionInfo.remoteStatic()
 			);
 
-			try (packet) {
-				channel.send(packet);
-			}
+			transmit(packet, connectionInfo.endpoint());
 
-			IncomingResponse response;
-			try (var sts = new StructuredTaskScope.ShutdownOnSuccess<IncomingResponse>()) {
-				sts.fork(channel::takeResponse);
-				sts.joinUntil(Instant.now().plusSeconds(5));
-
-				response = sts.result();
-			} catch (TimeoutException e) {
+			var response = inboundHandshakeResponseQueue.poll(5, TimeUnit.SECONDS);
+			if (response == null) {
 				logger.log(WARNING, "Handshake response timed out");
-				return false;
-			} catch (ExecutionException e) {
-				if (e.getCause() instanceof InterruptedException)
-					Thread.currentThread().interrupt();
-				else
-					logger.log(WARNING, "Failed to take handshake response", e);
-
 				return false;
 			}
 
@@ -196,9 +209,9 @@ final class SessionManager implements Runnable {
 	@GuardedBy("lock")
 	private void performHandshakeResponse(IncomingInitiation initiation) throws InterruptedException {
 		try {
-			var handshake = Handshakes.responderHandshake(connectionInfo.handshakeDetails(), initiation.ephemeral(), initiation.encryptedStatic(), initiation.encryptedTimestamp());
+			var handshake = Handshakes.responderHandshake(localIdentity, initiation.ephemeral(), initiation.encryptedStatic(), initiation.encryptedTimestamp());
 
-			int localIndex = channel.prepareNewSession(initiation.originAddress());
+			int localIndex = allocateNewSessionIndex();
 			var packet = new OutgoingResponse(
 				pool.acquire(),
 				initiation.originAddress(),
@@ -211,9 +224,7 @@ final class SessionManager implements Runnable {
 				handshake.getRemotePublicKey()
 			);
 
-			try (packet) {
-				channel.send(packet);
-			}
+			transmit(packet, initiation.originAddress());
 
 			setSession(new EstablishedSession(handshake.getKeypair(), initiation.originAddress(), initiation.senderIndex(), DEFAULT_KEEPALIVE_INTERVAL));
 			logger.log(INFO, "Completed handshake (responder)");
@@ -233,12 +244,47 @@ final class SessionManager implements Runnable {
 	}
 
 	/**
+	 * Allocates a new session index and tells the device to route packets with that index to this peer.
+	 */
+	private int allocateNewSessionIndex() {
+		return device.allocateNewSessionIndex(connectionInfo.remoteStatic());
+	}
+
+	/**
+	 * Transmits the given packet to the given address and returns its backing buffer to the pool.
+	 * This method does not route transport data (inc. keepalives), and only should be used for session control packets.
+	 */
+	private void transmit(@WillClose OutgoingPeerPacket packet, InetSocketAddress destination) throws IOException {
+		try (packet) {
+			channel.send(packet.transmissiblePacket().asByteBuffer(), destination);
+		}
+	}
+
+	/**
 	 * Sets the session. Requires that the peerLock be held.
 	 */
 	@GuardedBy("lock")
 	private void setSession(@Nullable EstablishedSession session) {
 		this.session = session;
 		condition.signalAll();
+	}
+
+	/**
+	 * Handles an incoming initiation message from the peer.
+	 *
+	 * @param message the message to handle
+	 */
+	void handleInitiation(IncomingInitiation message) {
+		inboundHandshakeInitiationQueue.offer(message);
+	}
+
+	/**
+	 * Handles an incoming response message from the peer.
+	 *
+	 * @param message the message to handle
+	 */
+	void handleResponse(IncomingResponse message) {
+		inboundHandshakeResponseQueue.offer(message);
 	}
 
 	/**
