@@ -13,7 +13,7 @@ services:
             - SYS_ADMIN
         sysctls:
             - net.ipv6.conf.all.disable_ipv6=0
-        restart: unless-stopped
+        restart: no
         networks:
             - wireguard-network
         security_opt:
@@ -21,7 +21,7 @@ services:
         devices:
             - /dev/net/tun:/dev/net/tun
         command:
-            - -agentpath:/libasyncProfiler.so=start,alluser,event=cpu,file=/profiling/profile-server.jfr,interval=10000000,timeout=60
+            - -agentpath:/libasyncProfiler.so=start,event=cpu,wall,file=/profiling/profile-server.jfr,interval=10000000,timeout=60
 
     iperf3-server:
         image: networkstatic/iperf3
@@ -43,7 +43,7 @@ services:
             - SYS_ADMIN
         sysctls:
             - net.ipv6.conf.all.disable_ipv6=0
-        restart: unless-stopped
+        restart: no
         networks:
             - wireguard-network
         security_opt:
@@ -51,15 +51,7 @@ services:
         devices:
             - /dev/net/tun:/dev/net/tun
         command:
-            - -agentpath:/libasyncProfiler.so=start,alluser,event=cpu,file=/profiling/profile-client.jfr,interval=10000000,timeout=60
-    wireguard-client-iperf3:
-        image: networkstatic/iperf3
-        command: -c iperf3-server -t 120 -P 16
-        network_mode: "service:wireguard-client"
-        depends_on:
-            - wireguard-client
-            - iperf3-server
-
+            - -agentpath:/libasyncProfiler.so=start,event=cpu,wall,file=/profiling/profile-client.jfr,interval=10000000,timeout=60
 networks:
     wireguard-network:
         driver: bridge

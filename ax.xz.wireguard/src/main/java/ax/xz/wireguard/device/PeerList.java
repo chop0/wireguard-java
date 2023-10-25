@@ -24,6 +24,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import static java.lang.System.Logger.Level.DEBUG;
+import static java.lang.System.Logger.Level.INFO;
 
 class PeerList {
 	private static final System.Logger log = System.getLogger(PeerList.class.getName());
@@ -41,12 +42,12 @@ class PeerList {
 
 	// TODO:  this (and the other addPeer) is shit
 	public void addPeer(Peer.PeerConnectionInfo connectionInfo) {
-		var peer = new Peer(device, device.getStaticIdentity(), device.datagramChannel, device.getBufferPool(), device.inboundTransportQueue, connectionInfo);
+		var peer = new Peer(device, device.getStaticIdentity(), device.datagramChannel, device.getBufferPool(), device.tun, connectionInfo);
 		registerPeer(peer);
 	}
 
 	private void addPeer(NoisePublicKey publicKey) {
-		var peer = new Peer(device, device.getStaticIdentity(), device.datagramChannel, device.getBufferPool(), device.inboundTransportQueue, Peer.PeerConnectionInfo.of(publicKey));
+		var peer = new Peer(device, device.getStaticIdentity(), device.datagramChannel, device.getBufferPool(), device.tun, Peer.PeerConnectionInfo.of(publicKey));
 		registerPeer(peer);
 	}
 
@@ -60,13 +61,13 @@ class PeerList {
 
 			var peer = innerList.get(receiverIndex);
 			if (peer == null) {
-				log.log(DEBUG, "Received message from unknown index {0}", receiverIndex);
+				log.log(INFO, "Received message from unknown index {0}", receiverIndex);
 				return;
 			}
 
 			innerList.get(receiverIndex).routeMessage(incomingPeerPacket);
 		} catch (BadPaddingException e) {
-			log.log(DEBUG, "Could not decrypt packet", e);
+			log.log(INFO, "Could not decrypt packet", e);
 		}
 	}
 
@@ -128,7 +129,7 @@ class PeerList {
 			innerList.insert(newPeer);
 			peerExecutor.submit(newPeer);
 
-			log.log(DEBUG, "Registered peer {0}", newPeer);
+			log.log(INFO, "Registered peer {0}", newPeer);
 		} finally {
 			peerListLock.writeLock().unlock();
 		}
@@ -261,7 +262,7 @@ class PeerList {
 				try {
 					peer.run();
 				} finally {
-					log.log(DEBUG, "Peer {0} exited", peer);
+					log.log(INFO, "Peer {0} exited", peer);
 					deregisterPeer(peer);
 				}
 			};

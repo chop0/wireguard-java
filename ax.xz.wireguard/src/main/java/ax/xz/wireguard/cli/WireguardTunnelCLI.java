@@ -21,7 +21,7 @@ public class WireguardTunnelCLI {
 		logger.log(ERROR, "usage: %s <file>\n", cmdline);
 	}
 
-	public static void main(String[] args) throws IOException, InterruptedException {
+	public static void main(String[] args) throws Exception {
 		if (args.length != 1) {
 			printHelp(ProcessHandle.current().info().commandLine().orElse("wireguard-java"));
 			System.exit(1);
@@ -37,8 +37,8 @@ public class WireguardTunnelCLI {
 		}
 
 		try (
-			var device = new WireguardDevice(config.interfaceConfig().privateKey());
-			var tun = TunProvider.getProvider().open()
+			var tun = TunProvider.getProvider().open();
+			var device = new WireguardDevice(config.interfaceConfig().privateKey(), tun);
 		) {
 			logger.log(DEBUG, "Opened tun device {0}", tun.toString());
 			tun.setMTU(1500);
@@ -53,7 +53,6 @@ public class WireguardTunnelCLI {
 			for (var peer : config.peers()) {
 				device.addPeer(peer);
 			}
-
 			var coupling = new TunnelDeviceBond(device, tun);
 			coupling.run();
 		}

@@ -4,6 +4,10 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 
 public class POSIXTunUtils {
+	static {
+		System.loadLibrary("posix_raw");
+	}
+
 	static final int AF_INET = AFINET();
 	static final int AF_INET6 = AFINET6();
 

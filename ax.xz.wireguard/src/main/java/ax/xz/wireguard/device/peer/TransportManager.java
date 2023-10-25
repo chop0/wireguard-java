@@ -1,5 +1,6 @@
 package ax.xz.wireguard.device.peer;
 
+import ax.xz.raw.spi.Tun;
 import ax.xz.wireguard.device.Pool;
 import ax.xz.wireguard.device.WireguardDevice;
 import ax.xz.wireguard.device.message.transport.incoming.DecryptedIncomingTransport;
@@ -12,10 +13,9 @@ import ax.xz.wireguard.util.ReferenceCounted;
 
 import javax.annotation.WillClose;
 import javax.crypto.BadPaddingException;
+import java.io.IOException;
 import java.lang.foreign.MemorySegment;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.Executor;
-import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.*;
 
 import static java.lang.System.Logger.Level.DEBUG;
 import static java.lang.System.Logger.Level.WARNING;
@@ -38,7 +38,6 @@ import static java.lang.foreign.ValueLayout.JAVA_BYTE;
  * </p>
  */
 class TransportManager implements Runnable {
-	private static final Executor packetProcessor = WireguardDevice.SYNCRONOUS_PIPELINE ? Runnable::run : ForkJoinPool.commonPool();
 	private static final System.Logger logger = System.getLogger(TransportManager.class.getName());
 
 	private final IPFilter destinationFilter;
@@ -48,13 +47,13 @@ class TransportManager implements Runnable {
 	/**
 	 * A queue of packets to be sent up the network stack through a tun device.
 	 */
-	private final BlockingQueue<DecryptedIncomingTransport> interfaceBoundQueue;
+	private final Tun tun;
 
-	TransportManager(IPFilter destinationFilter, SessionManager sessionManager, Pool pool, BlockingQueue<DecryptedIncomingTransport> interfaceBoundQueue) {
+	TransportManager(IPFilter destinationFilter, SessionManager sessionManager, Pool pool, Tun tun) {
 		this.destinationFilter = destinationFilter;
 		this.sessionManager = sessionManager;
 		this.pool = pool;
-		this.interfaceBoundQueue = interfaceBoundQueue;
+		this.tun = tun;
 	}
 
 	public void run() {
@@ -76,7 +75,16 @@ class TransportManager implements Runnable {
 			return;
 		}
 
-		packetProcessor.execute(() -> decryptAndEnqueue(ciphertextMessage, currentSession));
+		decryptAndEnqueue(ciphertextMessage, currentSession);
+	}
+
+	/**
+	 * Enqueues an outbound transport message to be encrypted and sent to the peer.
+	 */
+	void sendOutgoingTransport(ReferenceCounted<IncomingTunnelPacket> guard) {
+		try (guard) {
+			sendOutgoingTransportNow(guard.get().packet());
+		}
 	}
 
 	/**
@@ -98,24 +106,19 @@ class TransportManager implements Runnable {
 	private void processDecryptedTransport(DecryptedIncomingTransport transport) {
 		var plaintext = transport.plaintextBuffer();
 
-		boolean sentToQueue;
-
 		if (plaintext.byteSize() == 0) {
 			logger.log(DEBUG, "Received keepalive");
-			sentToQueue = false;
 		} else if (!destinationFilter.search(destinationIPOf(plaintext))) {
 			logger.log(DEBUG, "Dropped packet with destination outside of allowed range");
-			sentToQueue = false;
-		} else if (!interfaceBoundQueue.offer(transport)) {
-			logger.log(WARNING, "Dropped decrypted packet on its way to the tun device");
-			sentToQueue = false;
 		} else {
-			sentToQueue = true;
+			try {
+				tun.write(transport.plaintextBuffer().asByteBuffer());
+			} catch (IOException e) {
+				logger.log(WARNING, "Dropped decrypted packet on its way to the tun device", e);
+			}
 		}
 
-		if (!sentToQueue) {
-			transport.close();
-		}
+		transport.close();
 	}
 
 	/**
@@ -137,8 +140,10 @@ class TransportManager implements Runnable {
 	void sendOutgoingTransportNow(MemorySegment plaintext) {
 		// get the session as close to the send as possible
 		var session = sessionManager.tryGetSessionNow();
-		if (session == null)
+		if (session == null) {
+			logger.log(WARNING, "Dropping packet because no session established");
 			return;
+		}
 
 		var packet = new UnencryptedOutgoingTransport(pool.acquire(), plaintext.byteSize() + 16, session.getRemoteIndex());
 
@@ -146,14 +151,5 @@ class TransportManager implements Runnable {
 		session.sendOutgoingTransport(outgoing);
 	}
 
-	/**
-	 * Enqueues an outbound transport message to be encrypted and sent to the peer.
-	 */
-	void sendOutgoingTransport(ReferenceCounted<IncomingTunnelPacket> guard) {
-		packetProcessor.execute(() -> {
-			try (guard) {
-				sendOutgoingTransportNow(guard.get().packet());
-			}
-		});
-	}
+
 }

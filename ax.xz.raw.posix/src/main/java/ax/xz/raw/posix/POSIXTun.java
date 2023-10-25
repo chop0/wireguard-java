@@ -1,6 +1,7 @@
 package ax.xz.raw.posix;
 
 import ax.xz.raw.spi.Tun;
+import jdk.nio.Channels;
 
 import java.io.FileDescriptor;
 import java.io.FileInputStream;
@@ -10,6 +11,9 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.channels.SelectableChannel;
+import java.nio.channels.SelectionKey;
+import java.nio.channels.Selector;
 import java.util.Arrays;
 import java.util.Set;
 
@@ -20,16 +24,10 @@ import static java.util.Objects.requireNonNull;
 public class POSIXTun implements Tun {
 	private static final boolean needsAfTypePrefix = System.getProperty("os.name").toLowerCase().contains("bsd") || System.getProperty("os.name").toLowerCase().contains("os x");
 
-	private static final VarHandle FILE_DESCRIPTOR_READ_INDEX;
-	private static final VarHandle FILE_DESCRIPTOR_WRITE_INDEX;
-
 	private static final VarHandle STATE;
 
 	static {
 		try {
-			FILE_DESCRIPTOR_READ_INDEX = MethodHandles.lookup().findVarHandle(POSIXTun.class, "readFdIndex", int.class);
-			FILE_DESCRIPTOR_WRITE_INDEX = MethodHandles.lookup().findVarHandle(POSIXTun.class, "writeFdIndex", int.class);
-
 			STATE = MethodHandles.lookup().findVarHandle(POSIXTun.class, "state", State.class);
 		} catch (ReflectiveOperationException e) {
 			throw new ExceptionInInitializerError(e);
@@ -43,9 +41,9 @@ public class POSIXTun implements Tun {
 	private final FileDescriptor[] fileDescriptors;
 	private final FileChannel[] inputChannels;
 	private final FileChannel[] outputChannels;
+	private final SelectableChannel[] selectableChannels;
+	private final Selector readSelector, writeSelector;
 
-	private volatile int readFdIndex = 0;
-	private volatile int writeFdIndex = 0;
 
 	private volatile State state = State.DOWN;
 
@@ -57,13 +55,39 @@ public class POSIXTun implements Tun {
 		this.fileDescriptors = fds;
 		this.name = requireNonNull(name, "name must not be null");
 
-
 		this.inputChannels = new FileChannel[fileDescriptors.length];
 		this.outputChannels = new FileChannel[fileDescriptors.length];
+		this.selectableChannels = new SelectableChannel[fileDescriptors.length];
 
 		for (int i = 0; i < fileDescriptors.length; i++) {
-			inputChannels[i] = new FileInputStream(fileDescriptors[i]).getChannel();
-			outputChannels[i] = new FileOutputStream(fileDescriptors[i]).getChannel();
+			var fd = fileDescriptors[i];
+
+			inputChannels[i] = new FileInputStream(fd).getChannel();
+			outputChannels[i] = new FileOutputStream(fd).getChannel();
+			selectableChannels[i] = Channels.readWriteSelectableChannel(fd, new Channels.SelectableChannelCloser() {
+				@Override
+				public void implCloseChannel(SelectableChannel sc) throws IOException {
+					new FileOutputStream(fd).close();
+				}
+
+				@Override
+				public void implReleaseChannel(SelectableChannel sc) {
+
+				}
+			});
+		}
+
+		try {
+			this.readSelector = Selector.open();
+			this.writeSelector = Selector.open();
+
+			for (int i = 0; i < selectableChannels.length; i++) {
+				selectableChannels[i].configureBlocking(false);
+				selectableChannels[i].register(readSelector, SelectionKey.OP_READ, new ChannelPair(inputChannels[i], outputChannels[i]));
+				selectableChannels[i].register(writeSelector, SelectionKey.OP_WRITE, new ChannelPair(inputChannels[i], outputChannels[i]));
+			}
+		} catch (IOException e) {
+			throw new RuntimeException(e);
 		}
 
 		logger.log(INFO, "Opened tun {0} with file descriptors {1}", name, Arrays.toString(fileDescriptors));
@@ -73,13 +97,32 @@ public class POSIXTun implements Tun {
 	public int write(ByteBuffer buffer) throws IOException {
 		requireOpen();
 
-		int fdIndex = rotateFdIndex(FILE_DESCRIPTOR_WRITE_INDEX);
-		var outputChannel = outputChannels[fdIndex];
+		SelectionKey key;
+		for (;;) {
+//			outer:
+//			for (; ; ) {
+//				writeSelector.select();
+//
+//				synchronized (writeSelector) {
+//					for (var iter = writeSelector.selectedKeys().iterator(); iter.hasNext(); ) {
+//						if ((key = iter.next()) != null && key.isWritable()) {
+//							iter.remove();
+//							break outer;
+//						}
+//					}
+//				}
+//			}
 
-		if (needsAfTypePrefix)
-			return (int) (outputChannel.write(new ByteBuffer[]{getPacketFamily(buffer), buffer}) - 4);
-		else
-			return outputChannel.write(buffer);
+			var outputChannel = outputChannels[0];
+			int bytesWritten;
+			if (needsAfTypePrefix)
+				bytesWritten = (int) (outputChannel.write(new ByteBuffer[]{getPacketFamily(buffer), buffer}) - 4);
+			else
+				bytesWritten = outputChannel.write(buffer);
+
+			if (bytesWritten > 0)
+				return bytesWritten;
+		}
 	}
 
 	@Override
@@ -90,18 +133,35 @@ public class POSIXTun implements Tun {
 
 		requireOpen();
 
-		int fdIndex = rotateFdIndex(FILE_DESCRIPTOR_READ_INDEX);
-		var inputChannel = inputChannels[fdIndex];
+		SelectionKey key;
+		for (;;) {
+			outer:
+			for (; ; ) {
+				readSelector.select();
 
-		if (needsAfTypePrefix)
-			return (int) (inputChannel.read(new ByteBuffer[]{TempHolder.PACKET_FAMILY.get().clear(), buffer}) - 4);
-		else
-			return inputChannel.read(buffer);
+				synchronized (readSelector) {
+					for (var iter = readSelector.selectedKeys().iterator(); iter.hasNext(); ) {
+						if ((key = iter.next()) != null && key.isReadable()) {
+							iter.remove();
+							break outer;
+						}
+					}
+				}
+			}
+
+			var inputChannel = ((ChannelPair) key.attachment()).input;
+
+			int bytesRead;
+			if (needsAfTypePrefix)
+				bytesRead = (int) (inputChannel.read(new ByteBuffer[]{TempHolder.PACKET_FAMILY.get().clear(), buffer}) - 4);
+			else
+				bytesRead = inputChannel.read(buffer);
+
+			if (bytesRead > 0)
+				return bytesRead;
+		}
 	}
 
-	private int rotateFdIndex(VarHandle vh) {
-		return (int) (Integer.toUnsignedLong((int) vh.getAndAdd(this, 1)) % fileDescriptors.length);
-	}
 
 	@Override
 	public void close() throws IOException {
@@ -160,4 +220,6 @@ public class POSIXTun implements Tun {
 	enum State {
 		DOWN, UP, CLOSED
 	}
+
+	record ChannelPair(FileChannel input, FileChannel output) {}
 }

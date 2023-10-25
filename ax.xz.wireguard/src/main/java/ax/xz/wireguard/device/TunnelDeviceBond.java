@@ -27,28 +27,20 @@ public class TunnelDeviceBond {
 		try (var sts = new PersistentTaskExecutor<>(RuntimeException::new, logger, Thread.ofPlatform().factory())) {
 			sts.submit(device::run);
 
-			sts.submit("Tunnel read worker", () -> {
-				while (!Thread.interrupted()) {
-					var buffer = new UninitialisedIncomingTunnelPacket(device.getBufferPool().acquire());
+			for (int i = 0; i < 1; i++)
+				sts.submit("Tunnel read worker", () -> {
+					while (!Thread.interrupted()) {
+						var buffer = new UninitialisedIncomingTunnelPacket(device.getBufferPool().acquire());
 
-					try {
-						var packet = buffer.initialise(tunnel::read);
-						device.broadcastPacketToPeers(packet);
-					} catch (IOException e) {
-						logger.log(WARNING, "Error reading from tunnel", e);
+						try {
+							var packet = buffer.initialise(tunnel::read);
+							device.broadcastPacketToPeers(packet);
+						} catch (IOException e) {
+							logger.log(WARNING, "Error reading from tunnel", e);
+						}
 					}
-				}
-			});
+				});
 
-			sts.submit("Tunnel write worker", () -> {
-				while (!Thread.interrupted()) {
-					try (var transport = device.receiveIncomingTransport()) {
-						tunnel.write(transport.plaintextBuffer().asByteBuffer());
-					} catch (IOException e) {
-						logger.log(WARNING, "Error writing to tunnel", e);
-					}
-				}
-			});
 
 			try (var sch = new ScheduledThreadPoolExecutor(0, Thread.ofVirtual().factory())) {
 				sch.scheduleAtFixedRate(() -> logger.log(INFO, device.getStats().toString()), 0, 10, java.util.concurrent.TimeUnit.SECONDS);

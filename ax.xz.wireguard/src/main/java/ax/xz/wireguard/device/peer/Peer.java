@@ -1,5 +1,7 @@
 package ax.xz.wireguard.device.peer;
 
+import ax.xz.raw.spi.BatchedDatagramSocket;
+import ax.xz.raw.spi.Tun;
 import ax.xz.wireguard.device.Pool;
 import ax.xz.wireguard.device.WireguardDevice;
 import ax.xz.wireguard.device.message.IncomingPeerPacket;
@@ -38,11 +40,11 @@ public class Peer implements Runnable {
 
 	private final AtomicBoolean started = new AtomicBoolean(false);
 
-	public Peer(WireguardDevice device, NoisePrivateKey localIdentity, DatagramChannel channel, Pool pool, BlockingQueue<DecryptedIncomingTransport> interfaceBoundQueue, PeerConnectionInfo connectionInfo) {
+	public Peer(WireguardDevice device, NoisePrivateKey localIdentity, DatagramChannel channel, Pool pool, Tun tun, PeerConnectionInfo connectionInfo) {
 		this.connectionInfo = connectionInfo;
 
 		this.sessionManager = new SessionManager(device, channel, connectionInfo, localIdentity, pool);
-		this.transportManager = new TransportManager(connectionInfo.filter, sessionManager, pool, interfaceBoundQueue);
+		this.transportManager = new TransportManager(connectionInfo.filter, sessionManager, pool, tun);
 		this.keepaliveSender = new KeepaliveSender(sessionManager, transportManager);
 	}
 

@@ -39,4 +39,4 @@ ip route add $(getent hosts iperf3-server | cut -d' ' -f 1)/32 dev tun0
 iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
 echo "Routing all traffic through tun0"
 
-wait $JAVA_PID
+iperf3 -c iperf3-server -t 120 -u -b 750M -P 2

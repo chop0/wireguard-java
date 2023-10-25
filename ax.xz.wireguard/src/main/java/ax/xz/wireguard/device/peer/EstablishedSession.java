@@ -27,23 +27,7 @@ final class EstablishedSession implements AutoCloseable {
 	// TODO: make this configurable
 	private final Instant expiration = Instant.now().plusSeconds(120);
 
-	/**
-	 * A queue for peer-bound, encrypted, transport packets.
-	 * These packets are here because they don't make sense to send if the session dies, since that presumably
-	 * destroys the remote's keypair.
-	 */
-	private final BlockingQueue<EncryptedOutgoingTransport> outboundSessionQueue = new LinkedBlockingQueue<>();
-
-
-	/**
-	 * The worker thread that sends the packets in {@link #outboundSessionQueue}.
-	 */
-	private final Thread outboundSessionWorker;
-
-	/**
-	 * The channel through which we send transport packets to the peer
-	 */
-	private final DatagramChannel channel;
+	private final BufferedPacketStream buffer;
 
 	public EstablishedSession(SymmetricKeypair keypair, InetSocketAddress outboundPacketAddress, int remoteIndex, Duration keepaliveInterval) throws IOException {
 		this.keypair = keypair;
@@ -51,33 +35,14 @@ final class EstablishedSession implements AutoCloseable {
 
 		this.remoteIndex = remoteIndex;
 		this.keepaliveInterval = keepaliveInterval;
-		this.channel = DatagramChannel.open();
 
-		this.outboundSessionWorker = Thread.startVirtualThread(this::outboundSessionWorker);
-	}
-
-	private void outboundSessionWorker() {
-		try {
-			while (!Thread.interrupted()) {
-				try (var packet = outboundSessionQueue.take()) {
-					channel.send(packet.transmissiblePacket().asByteBuffer(), outboundPacketAddress);
-				}
-			}
-		} catch (IOException e) {
-			log.log(ERROR, "Error sending packet", e);
-		} catch (InterruptedException ignored) {
-			// shutdown
-		}
+		buffer = new BufferedPacketStream(Duration.ofNanos(100_000));
 	}
 
 	@Override
 	public void close() throws InterruptedException {
-		outboundSessionWorker.interrupt();
+		buffer.close();
 		keypair.clean();
-
-		if (!outboundSessionWorker.join(Duration.ofSeconds(5))) {
-			log.log(ERROR, "Failed to join outbound session worker thread");
-		}
 	}
 
 	/**
@@ -85,8 +50,8 @@ final class EstablishedSession implements AutoCloseable {
 	 * @param packet the packet to be sent
 	 * @return true if the packet was successfully enqueued
 	 */
-	public boolean sendOutgoingTransport(EncryptedOutgoingTransport packet) {
-		return outboundSessionQueue.offer(packet);
+	public void sendOutgoingTransport(EncryptedOutgoingTransport packet) {
+		buffer.transmit(packet, outboundPacketAddress);
 	}
 
 	public void decryptTransportPacket(long counter, MemorySegment ciphertext, MemorySegment plaintext) throws BadPaddingException {
