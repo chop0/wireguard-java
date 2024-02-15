@@ -6,8 +6,6 @@ import ax.xz.wireguard.device.message.MessageResponse;
 import ax.xz.wireguard.util.PersistentTaskExecutor;
 import ax.xz.wireguard.util.RelinquishingQueue;
 
-import javax.annotation.Nullable;
-import javax.annotation.concurrent.GuardedBy;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.time.Duration;
@@ -133,7 +131,6 @@ final class SessionManager {
 		}
 	}
 
-	@GuardedBy("lock")
 	private void handleNextInitiation() throws InterruptedException {
 		var message = inboundHandshakeInitiationQueue.take();
 
@@ -151,7 +148,6 @@ final class SessionManager {
 		}
 	}
 
-	@GuardedBy("lock")
 	private void attemptSessionRecoveryIfRequired() throws InterruptedException {
 		if (connectionInfo.endpoint() == null || !(session == null || session.isExpired())) {
 			return;
@@ -186,7 +182,6 @@ final class SessionManager {
 		}
 	}
 
-	@GuardedBy("lock")
 	private void sendKeepaliveIfNeeded() throws InterruptedException, IOException {
 		if (session != null && session.needsKeepalive()) {
 			session.sendKeepalive(device);
@@ -230,8 +225,7 @@ final class SessionManager {
 	/**
 	 * Sets the session. Requires that the peerLock be held.
 	 */
-	@GuardedBy("lock")
-	private void setSession(@Nullable EstablishedSession session) {
+	private void setSession(EstablishedSession session) {
 		this.session = session;
 		sessionCondition.signalAll();
 	}
@@ -240,7 +234,6 @@ final class SessionManager {
 	/**
 	 * Returns the current session, or null if no session is established.
 	 */
-	@Nullable
 	EstablishedSession tryGetSessionNow() {
 		return session;
 	}
@@ -248,7 +241,6 @@ final class SessionManager {
 	/**
 	 * Marks the session as dead.  Requires that the peerLock be held.
 	 */
-	@GuardedBy("lock")
 	private void killSession() {
 		setSession(null);
 	}

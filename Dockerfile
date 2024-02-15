@@ -1,13 +1,11 @@
 FROM openjdk:21-slim as build-java
 
-COPY ./jsr305-3.0.2.jar /src/jsr305-3.0.2.jar
 COPY ./ax.xz.raw/src/main/java /src/ax.xz.raw/src/main/java
 COPY ./ax.xz.raw.posix/src/main/java /src/ax.xz.raw.posix/src/main/java
 COPY ./ax.xz.wireguard/src/main/java /src/ax.xz.wireguard/src/main/java
 COPY ./ax.xz.wireguard.noise/src/main/java /src/ax.xz.wireguard.noise/src/main/java
 RUN mkdir -p /build
 
-RUN jdeps --generate-module-info /build /src/jsr305-3.0.2.jar && cd /build/jsr305 && javac /build/jsr305/module-info.java --patch-module jsr305=/src/jsr305-3.0.2.jar && jar xf /src/jsr305-3.0.2.jar && rm -f /build/jsr305/module-info.java
 RUN javac --enable-preview --release 21 -p /build -d /build --module-source-path '/src/*/src/main/java' -m ax.xz.raw,ax.xz.raw.posix,ax.xz.wireguard,ax.xz.wireguard.noise
 
 FROM alpine:3.18.3 as build-native

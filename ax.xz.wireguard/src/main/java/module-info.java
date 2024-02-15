@@ -7,5 +7,4 @@ module ax.xz.wireguard {
 	exports ax.xz.wireguard.util;
 
 	requires ax.xz.wireguard.noise;
-	requires jsr305;
 }

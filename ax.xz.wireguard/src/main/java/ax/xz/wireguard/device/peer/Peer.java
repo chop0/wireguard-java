@@ -9,7 +9,6 @@ import ax.xz.wireguard.device.message.MessageTransport;
 import ax.xz.wireguard.noise.keys.NoisePresharedKey;
 import ax.xz.wireguard.noise.keys.NoisePublicKey;
 
-import javax.annotation.Nullable;
 import java.net.InetSocketAddress;
 import java.time.Duration;
 import java.util.concurrent.ExecutorService;
@@ -166,8 +165,8 @@ public class Peer {
 		return session.getOutboundPacketAddress().toString();
 	}
 
-	public record PeerConnectionInfo(NoisePublicKey remoteStatic, @Nullable NoisePresharedKey presharedKey,
-									 @Nullable InetSocketAddress endpoint, @Nullable Duration keepaliveInterval) {
+	public record PeerConnectionInfo(NoisePublicKey remoteStatic, NoisePresharedKey presharedKey,
+									 InetSocketAddress endpoint, Duration keepaliveInterval) {
 		public PeerConnectionInfo {
 			requireNonNull(remoteStatic);
 

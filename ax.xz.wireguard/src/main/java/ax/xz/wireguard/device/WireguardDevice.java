@@ -11,7 +11,6 @@ import ax.xz.wireguard.noise.keys.NoisePrivateKey;
 import ax.xz.wireguard.noise.keys.NoisePublicKey;
 import ax.xz.wireguard.util.PersistentTaskExecutor;
 
-import javax.annotation.Nullable;
 import javax.crypto.BadPaddingException;
 import java.io.Closeable;
 import java.io.IOException;
@@ -147,7 +146,7 @@ public final class WireguardDevice implements Closeable {
 		return inboundTransportQueue.take();
 	}
 
-	public void addPeer(NoisePublicKey publicKey, NoisePresharedKey noisePresharedKey, Duration keepaliveInterval, @Nullable InetSocketAddress endpoint) {
+	public void addPeer(NoisePublicKey publicKey, NoisePresharedKey noisePresharedKey, Duration keepaliveInterval, InetSocketAddress endpoint) {
 		peerList.addPeer(publicKey, noisePresharedKey, keepaliveInterval, endpoint);
 	}
 

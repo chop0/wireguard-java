@@ -5,9 +5,6 @@ import ax.xz.wireguard.device.peer.Peer;
 import ax.xz.wireguard.noise.keys.NoisePresharedKey;
 import ax.xz.wireguard.noise.keys.NoisePublicKey;
 
-import javax.annotation.Nullable;
-import javax.annotation.concurrent.GuardedBy;
-import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.time.Duration;
 import java.util.*;
@@ -32,7 +29,7 @@ class PeerList {
 		this.device = device;
 	}
 
-	public void addPeer(NoisePublicKey publicKey, NoisePresharedKey noisePresharedKey, Duration keepaliveInterval, @Nullable InetSocketAddress endpoint) {
+	public void addPeer(NoisePublicKey publicKey, NoisePresharedKey noisePresharedKey, Duration keepaliveInterval, InetSocketAddress endpoint) {
 		peerListLock.writeLock().lock();
 
 		try {
@@ -43,7 +40,6 @@ class PeerList {
 		}
 	}
 
-	@GuardedBy("peerListLock.writeLock()")
 	private void addPeer(NoisePublicKey publicKey) {
 		var peer = new Peer(device, device.inboundTransportQueue, new Peer.PeerConnectionInfo(publicKey, null, null, null), device.getBufferPool());
 		registerPeer(peer);
