@@ -57,8 +57,16 @@ public class WireguardTunnelCLI {
 				);
 			}
 
-			var coupling = new TunnelDeviceBond(device, tun);
-			coupling.run();
+			Files.createDirectories(Path.of("/etc/wireguard"));
+			Files.createFile(Path.of("/etc/wireguard/wg-java"));
+
+			try {
+				var coupling = new TunnelDeviceBond(device, tun);
+				coupling.run();
+			} finally {
+				Files.delete(Path.of("/etc/wireguard/wg-java"));
+				Files.delete(Path.of("/etc/wireguard"));
+			}
 		}
 	}
 }

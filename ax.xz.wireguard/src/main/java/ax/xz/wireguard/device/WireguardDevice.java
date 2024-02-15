@@ -172,7 +172,6 @@ public final class WireguardDevice implements Closeable {
 	 * @throws BadPaddingException
 	 */
 	private void handleMessage(InetSocketAddress address, Message message) throws BadPaddingException {
-		log.log(DEBUG, "Received message {0} from {1}", message, address);
 		switch (message) {
 			case MessageInitiation initiation -> {
 				var remoteStatic = Handshakes.decryptRemoteStatic(staticIdentity, initiation.ephemeral(), initiation.encryptedStatic(), initiation.encryptedTimestamp());

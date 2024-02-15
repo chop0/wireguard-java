@@ -11,7 +11,7 @@ RUN jdeps --generate-module-info /build /src/jsr305-3.0.2.jar && cd /build/jsr30
 RUN javac --enable-preview --release 21 -p /build -d /build --module-source-path '/src/*/src/main/java' -m ax.xz.raw,ax.xz.raw.posix,ax.xz.wireguard,ax.xz.wireguard.noise
 
 FROM alpine:3.18.3 as build-native
-RUN --mount=type=cache,target=/var/cache/apk apk update && apk add cmake ninja build-base linux-headers
+RUN apk update && apk add cmake ninja build-base linux-headers
 
 COPY ./CMakeLists.txt /build/CMakeLists.txt
 COPY ./ax.xz.raw.posix/src/main/c /build/ax.xz.raw.posix/src/main/c
@@ -29,7 +29,7 @@ RUN cd /src && make -j$(nproc)
 RUN mkdir /out && cp /src/build/lib/* /out/ && cp /src/build/bin/* /out/
 
 FROM openjdk:21-slim as runtime
-RUN apt update && apt install -y iproute2 iptables iperf3 wget
+RUN apt update && apt install -y iproute2 iptables iperf3 wget inotify-tools iputils-ping curl
 
 WORKDIR /app
 
