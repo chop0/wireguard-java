@@ -5,10 +5,10 @@ import ax.xz.wireguard.device.message.MessageInitiation;
 import ax.xz.wireguard.device.message.MessageResponse;
 import ax.xz.wireguard.device.message.MessageTransport;
 import ax.xz.wireguard.device.peer.Peer;
-import ax.xz.wireguard.noise.handshake.Handshakes;
-import ax.xz.wireguard.noise.keys.NoisePresharedKey;
-import ax.xz.wireguard.noise.keys.NoisePrivateKey;
-import ax.xz.wireguard.noise.keys.NoisePublicKey;
+import ax.xz.wireguard.handshake.Handshakes;
+import ax.xz.wireguard.keys.NoisePresharedKey;
+import ax.xz.wireguard.keys.NoisePrivateKey;
+import ax.xz.wireguard.keys.NoisePublicKey;
 import ax.xz.wireguard.util.PersistentTaskExecutor;
 
 import javax.crypto.BadPaddingException;

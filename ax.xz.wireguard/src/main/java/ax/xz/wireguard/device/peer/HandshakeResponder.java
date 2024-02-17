@@ -3,7 +3,7 @@ package ax.xz.wireguard.device.peer;
 import ax.xz.wireguard.device.WireguardDevice;
 import ax.xz.wireguard.device.message.MessageInitiation;
 import ax.xz.wireguard.device.message.MessageResponse;
-import ax.xz.wireguard.noise.handshake.Handshakes;
+import ax.xz.wireguard.handshake.Handshakes;
 
 import javax.crypto.BadPaddingException;
 import java.io.IOException;

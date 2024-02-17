@@ -2,11 +2,11 @@
 
 java \
 	-server --enable-preview \
-	-p . -Djava.library.path=. \
+	-p . \
 	-XX:CompileThreshold=1500 \
-	--add-opens java.base/com.sun.crypto.provider=ax.xz.wireguard.noise \
+	--add-opens java.base/java.io=ax.xz.raw\
 	"$@" \
-	-m ax.xz.wireguard/ax.xz.wireguard.cli.WireguardTunnelCLI "/wireguard.conf"&
+	-m ax.xz.wireguard.cli/ax.xz.wireguard.cli.WireguardTunnelCLI "/wireguard.conf"&
 CHILD=$!
 
 _term() {

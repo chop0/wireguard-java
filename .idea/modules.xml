@@ -4,9 +4,8 @@
     <modules>
       <module fileurl="file://$PROJECT_DIR$/ax.xz.packet/ax.xz.packet.iml" filepath="$PROJECT_DIR$/ax.xz.packet/ax.xz.packet.iml" />
       <module fileurl="file://$PROJECT_DIR$/ax.xz.raw/ax.xz.raw.iml" filepath="$PROJECT_DIR$/ax.xz.raw/ax.xz.raw.iml" />
-      <module fileurl="file://$PROJECT_DIR$/ax.xz.raw.posix/ax.xz.raw.posix.iml" filepath="$PROJECT_DIR$/ax.xz.raw.posix/ax.xz.raw.posix.iml" />
       <module fileurl="file://$PROJECT_DIR$/ax.xz.wireguard/ax.xz.wireguard.iml" filepath="$PROJECT_DIR$/ax.xz.wireguard/ax.xz.wireguard.iml" />
-      <module fileurl="file://$PROJECT_DIR$/ax.xz.wireguard.noise/ax.xz.wireguard.noise.iml" filepath="$PROJECT_DIR$/ax.xz.wireguard.noise/ax.xz.wireguard.noise.iml" />
+      <module fileurl="file://$PROJECT_DIR$/ax.xz.wireguard.cli/ax.xz.wireguard.cli.iml" filepath="$PROJECT_DIR$/ax.xz.wireguard.cli/ax.xz.wireguard.cli.iml" />
     </modules>
   </component>
 </project>

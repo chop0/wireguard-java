@@ -2,7 +2,7 @@ package ax.xz.wireguard.device.peer;
 
 import ax.xz.wireguard.device.BufferPool;
 import ax.xz.wireguard.device.WireguardDevice;
-import ax.xz.wireguard.noise.handshake.SymmetricKeypair;
+import ax.xz.wireguard.handshake.SymmetricKeypair;
 import ax.xz.wireguard.device.message.MessageTransport;
 
 import javax.crypto.BadPaddingException;
@@ -68,15 +68,11 @@ final class EstablishedSession {
 	 * @return the counter value used as a nonce for the packet
 	 */
 	long cipher(ByteBuffer src, ByteBuffer dst) throws ShortBufferException {
-		try (var scratchBuffer = bufferPool.acquire(keypair.scratchBufferSize(src, dst))) {
-			return keypair.cipher(scratchBuffer.buffer(), src, dst);
-		}
+		return keypair.cipher(src, dst);
 	}
 
 	void decipher(long counter, ByteBuffer src, ByteBuffer dst) throws BadPaddingException {
-		try (var scratchBuffer = bufferPool.acquire(keypair.scratchBufferSize(src, dst))) {
-			keypair.decipher(scratchBuffer.buffer(), counter, src, dst);
-		}
+		keypair.decipher(counter, src, dst);
 	}
 
 	public Instant expiration() {

@@ -2,8 +2,8 @@ package ax.xz.wireguard.device;
 
 import ax.xz.wireguard.device.message.Message;
 import ax.xz.wireguard.device.peer.Peer;
-import ax.xz.wireguard.noise.keys.NoisePresharedKey;
-import ax.xz.wireguard.noise.keys.NoisePublicKey;
+import ax.xz.wireguard.keys.NoisePresharedKey;
+import ax.xz.wireguard.keys.NoisePublicKey;
 
 import java.net.InetSocketAddress;
 import java.time.Duration;

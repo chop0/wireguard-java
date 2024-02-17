@@ -1,11 +1,10 @@
 package ax.xz.wireguard.device.message;
 
 import ax.xz.wireguard.device.BufferPool;
-import ax.xz.wireguard.noise.crypto.CookieGenerator;
-import ax.xz.wireguard.noise.crypto.Crypto;
-import ax.xz.wireguard.noise.keys.NoisePublicKey;
+import ax.xz.wireguard.crypto.CookieGenerator;
+import ax.xz.wireguard.crypto.Crypto;
+import ax.xz.wireguard.keys.NoisePublicKey;
 
-import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Arrays;
 import java.util.Objects;

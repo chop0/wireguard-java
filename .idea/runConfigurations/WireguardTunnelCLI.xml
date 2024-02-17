@@ -1,10 +1,10 @@
 <component name="ProjectRunConfigurationManager">
   <configuration default="false" name="WireguardTunnelCLI" type="Application" factoryName="Application" nameIsGenerated="true">
     <option name="MAIN_CLASS_NAME" value="ax.xz.wireguard.cli.WireguardTunnelCLI" />
-    <module name="ax.xz.wireguard" />
+    <module name="ax.xz.wireguard.cli" />
     <option name="PROGRAM_PARAMETERS" value="$PROJECT_DIR$/wgcf-profile.conf" />
     <target name="root@localhost:22" />
-    <option name="VM_PARAMETERS" value="--enable-preview --enable-native-access=ax.xz.raw.posix -Djava.library.path=$PROJECT_DIR$/build" />
+    <option name="VM_PARAMETERS" value="--enable-preview --add-opens=java.base/java.io=ax.xz.raw" />
     <extension name="coverage">
       <pattern>
         <option name="PATTERN" value="ax.xz.wireguard.cli.*" />

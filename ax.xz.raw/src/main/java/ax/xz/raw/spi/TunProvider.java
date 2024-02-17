@@ -9,7 +9,7 @@ import java.util.ServiceLoader;
  */
 public interface TunProvider {
 	static TunProvider getProvider() {
-		return ServiceLoader.load(TunProvider.class, ClassLoader.getSystemClassLoader()).stream().map(ServiceLoader.Provider::get)
+		return ServiceLoader.load(TunProvider.class).stream().map(ServiceLoader.Provider::get)
 				.filter(TunProvider::isAvailable)
 				.findFirst().orElseThrow(() -> new IllegalStateException("No TunProvider found"));
 	}

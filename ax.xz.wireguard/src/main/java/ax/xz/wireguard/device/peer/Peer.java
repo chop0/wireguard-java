@@ -6,8 +6,8 @@ import ax.xz.wireguard.device.message.Message;
 import ax.xz.wireguard.device.message.MessageInitiation;
 import ax.xz.wireguard.device.message.MessageResponse;
 import ax.xz.wireguard.device.message.MessageTransport;
-import ax.xz.wireguard.noise.keys.NoisePresharedKey;
-import ax.xz.wireguard.noise.keys.NoisePublicKey;
+import ax.xz.wireguard.keys.NoisePresharedKey;
+import ax.xz.wireguard.keys.NoisePublicKey;
 
 import java.net.InetSocketAddress;
 import java.time.Duration;
@@ -98,15 +98,13 @@ public class Peer {
 	 */
 	public void enqueueTransportPacket(BufferPool.BufferGuard data) {
 		packetProcessor.execute(() -> {
-			try {
+			try (data) {
 				var session = sessionManager.tryGetSessionNow();
 				if (session == null)
 					return;
 
 				var result = session.createTransportPacket(data.buffer());
 				device.queueTransmit(session.getOutboundPacketAddress(), result.bufferGuard());
-			} finally {
-				data.close();
 			}
 		});
 	}
